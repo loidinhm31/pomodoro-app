@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomodoro Timer - Tauri + Leptos</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'media',
+      theme: {
+        extend: {
+          fontFamily: {
+            'mono': ['JetBrains Mono', 'Consolas', 'Monaco', 'monospace'],
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          }
+        }
+      }
+    }
+  </script>
+
+  <link data-trunk rel="css" href="styles.css" />
+  <link data-trunk rel="copy-dir" href="public" />
+  <link data-trunk rel="rust" data-wasm-opt="z" />
+
+  <!-- Meta tags for better mobile experience -->
+  <meta name="description" content="A beautiful Pomodoro timer built with Tauri and Leptos" />
+  <meta name="theme-color" content="#3B82F6" />
+
+  <!-- Favicon (using Tauri logo for now) -->
+  <link rel="icon" type="image/svg+xml" href="public/tauri.svg" />
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 transition-colors duration-300">
+<!-- The Leptos app will mount here -->
+</body>
+</html>

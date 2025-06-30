@@ -1,0 +1,158 @@
+/* Import Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles and overrides */
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Custom timer animations */
+@keyframes pulse-timer {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.timer-pulse {
+  animation: pulse-timer 2s infinite;
+}
+
+/* Progress bar animations */
+.progress-bar {
+  transition: width 1s ease-in-out;
+}
+
+/* Button hover effects */
+.btn-primary {
+  @apply bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors;
+}
+
+.btn-success {
+  @apply bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors;
+}
+
+.btn-warning {
+  @apply bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition-colors;
+}
+
+.btn-danger {
+  @apply bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition-colors;
+}
+
+/* Timer display styling */
+.timer-display {
+  @apply text-6xl font-mono font-bold text-gray-800 dark:text-white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Session type badges */
+.session-badge {
+  @apply inline-block px-4 py-2 rounded-full text-white font-semibold shadow-lg;
+}
+
+.session-work {
+  @apply bg-red-500;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+.session-short-break {
+  @apply bg-green-500;
+  box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+}
+
+.session-long-break {
+  @apply bg-blue-500;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+/* Card styling */
+.timer-card {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode transitions */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Focus states for accessibility */
+button:focus, input:focus {
+  @apply outline-none ring-2 ring-blue-500 ring-opacity-50;
+}
+
+/* Disabled state styling */
+button:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+button:disabled:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Custom scrollbar for future use */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-400 dark:bg-gray-600 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500 dark:bg-gray-500;
+}
+
+/* Loading animation for future use */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive text sizing */
+@media (max-width: 640px) {
+  .timer-display {
+    @apply text-5xl;
+  }
+
+  .timer-card {
+    @apply p-6;
+  }
+}
+
+@media (max-width: 480px) {
+  .timer-display {
+    @apply text-4xl;
+  }
+
+  .timer-card {
+    @apply p-4;
+  }
+}
