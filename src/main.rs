@@ -1,4 +1,8 @@
 mod app;
+mod types;
+mod utils;
+mod timer;
+mod components;
 
 use app::*;
 use leptos::prelude::*;
