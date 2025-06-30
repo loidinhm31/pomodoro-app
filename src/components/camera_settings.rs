@@ -8,6 +8,14 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
     let settings = controller.camera_settings;
     let test_recording = RwSignal::new(false);
 
+    // Function to save settings whenever they change
+    let save_settings = {
+        let controller = controller.clone();
+        move || {
+            controller.save_settings();
+        }
+    };
+
     view! {
         <div class="camera-settings space-y-4">
             <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -30,11 +38,13 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                     checked=move || settings.get().enabled
                     on:change={
                         let controller_ref = controller.clone();
+                        let save_settings = save_settings.clone();
                         move |ev| {
                             let mut current_settings = settings.get();
                             current_settings.enabled = event_target_checked(&ev);
                             settings.set(current_settings);
-                            
+                            save_settings();
+
                             // Stop camera if disabled
                             if !event_target_checked(&ev) {
                                 controller_ref.stop_camera();
@@ -47,6 +57,7 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
             {move || {
                 if settings.get().enabled {
                     let controller_for_enabled = controller.clone();
+                    let save_settings_enabled = save_settings.clone();
                     view! {
                         <div class="space-y-4">
                             // Camera Status
@@ -74,7 +85,7 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                         }}
                                     </span>
                                 </div>
-                                
+
                                 // Test camera button
                                 <button
                                     class="mt-2 px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors disabled:opacity-50"
@@ -110,7 +121,7 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                 <h5 class="text-sm font-medium text-gray-700 dark:text-gray-300">
                                     "Recording Behavior"
                                 </h5>
-                                
+
                                 // Only during breaks
                                 <div class="flex items-center justify-between">
                                     <div>
@@ -125,10 +136,14 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                         type="checkbox"
                                         class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         checked=move || settings.get().only_during_breaks
-                                        on:change=move |ev| {
-                                            let mut current_settings = settings.get();
-                                            current_settings.only_during_breaks = event_target_checked(&ev);
-                                            settings.set(current_settings);
+                                        on:change={
+                                            let save_settings_breaks = save_settings_enabled.clone();
+                                            move |ev| {
+                                                let mut current_settings = settings.get();
+                                                current_settings.only_during_breaks = event_target_checked(&ev);
+                                                settings.set(current_settings);
+                                                save_settings_breaks();
+                                            }
                                         }
                                     />
                                 </div>
@@ -139,17 +154,21 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                 <h5 class="text-sm font-medium text-gray-700 dark:text-gray-300">
                                     "Video Quality"
                                 </h5>
-                                
+
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-600 dark:text-gray-400">
                                         "Resolution"
                                     </span>
                                     <select
                                         class="text-sm border rounded px-2 py-1 bg-white dark:bg-gray-800 dark:border-gray-600 text-gray-700 dark:text-gray-300"
-                                        on:change=move |ev| {
-                                            let mut current_settings = settings.get();
-                                            current_settings.video_quality = event_target_value(&ev);
-                                            settings.set(current_settings);
+                                        on:change={
+                                            let save_settings_quality = save_settings_enabled.clone();
+                                            move |ev| {
+                                                let mut current_settings = settings.get();
+                                                current_settings.video_quality = event_target_value(&ev);
+                                                settings.set(current_settings);
+                                                save_settings_quality();
+                                            }
                                         }
                                     >
                                         <option value="low" selected=move || settings.get().video_quality == "low">
@@ -179,15 +198,29 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                         max="60"
                                         class="w-16 text-sm border rounded px-2 py-1 bg-white dark:bg-gray-800 dark:border-gray-600 text-gray-700 dark:text-gray-300"
                                         value=move || settings.get().max_duration_minutes
-                                        on:input=move |ev| {
-                                            if let Ok(value) = event_target_value(&ev).parse::<u32>() {
-                                                let mut current_settings = settings.get();
-                                                current_settings.max_duration_minutes = value;
-                                                settings.set(current_settings);
+                                        on:input={
+                                            let save_settings_duration = save_settings_enabled.clone();
+                                            move |ev| {
+                                                if let Ok(value) = event_target_value(&ev).parse::<u32>() {
+                                                    let mut current_settings = settings.get();
+                                                    current_settings.max_duration_minutes = value;
+                                                    settings.set(current_settings);
+                                                    save_settings_duration();
+                                                }
                                             }
                                         }
                                     />
                                 </div>
+                            </div>
+
+                            // Settings persistence notice
+                            <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                                <h5 class="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
+                                    "Settings Saved"
+                                </h5>
+                                <p class="text-xs text-green-700 dark:text-green-300">
+                                    "Your camera settings are automatically saved and will be restored when you restart the app."
+                                </p>
                             </div>
 
                             // Storage Info
@@ -220,7 +253,8 @@ pub fn CameraSettings(controller: CameraController) -> impl IntoView {
                                 <p class="text-xs text-green-700 dark:text-green-300">
                                     "• All recordings stay on your device" <br/>
                                     "• No data is sent to external servers" <br/>
-                                    "• You have full control over your recordings"
+                                    "• You have full control over your recordings" <br/>
+                                    "• Settings are saved locally for convenience"
                                 </p>
                             </div>
                         </div>

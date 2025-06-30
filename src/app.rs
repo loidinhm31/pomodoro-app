@@ -1,4 +1,7 @@
-use crate::components::{CameraController, CameraRecorder, CameraSettings, SessionHistory, SessionSelector, SessionStats, TimerControls, TimerDisplay};
+use crate::components::{
+    CameraController, CameraRecorder, CameraSettings, SessionHistory, SessionSelector,
+    SessionStats, TimerControls, TimerDisplay,
+};
 use crate::console_log;
 use crate::timer::TimerController;
 use crate::types::{CameraState, TimerState};
@@ -23,7 +26,9 @@ pub fn App() -> impl IntoView {
         let controller = controller.clone();
         let camera_controller = camera_controller.clone();
         move |_| {
-            if controller.time_remaining.get() == 0 && controller.timer_state.get() == TimerState::Running {
+            if controller.time_remaining.get() == 0
+                && controller.timer_state.get() == TimerState::Running
+            {
                 controller.complete_session_with_camera(Some(&camera_controller));
             }
         }
@@ -41,7 +46,11 @@ pub fn App() -> impl IntoView {
             // If timer is running and camera is enabled, start recording for appropriate sessions
             if timer_state == TimerState::Running && camera_settings.enabled {
                 let should_record = if camera_settings.only_during_breaks {
-                    matches!(session_type, crate::types::SessionType::ShortBreak | crate::types::SessionType::LongBreak)
+                    matches!(
+                        session_type,
+                        crate::types::SessionType::ShortBreak
+                            | crate::types::SessionType::LongBreak
+                    )
                 } else {
                     true
                 };
@@ -59,8 +68,8 @@ pub fn App() -> impl IntoView {
 
     view! {
         <main class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-start p-4">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-lg">
-                
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-4xl">
+
                 // Tab Navigation
                 <div class="flex border-b border-gray-200 dark:border-gray-700">
                     <button
@@ -125,7 +134,7 @@ pub fn App() -> impl IntoView {
                                 let controller_timer = controller.clone();
                                 let camera_controller_timer = camera_controller.clone();
                                 view! {
-                                    <div>
+                                    <div class="max-w-lg mx-auto">
                                         // Session Type Header
                                         <div class="text-center mb-6">
                                             <h1 class="text-3xl font-bold text-gray-800 dark:text-white mb-2">
@@ -145,14 +154,16 @@ pub fn App() -> impl IntoView {
                                         // Timer Display
                                         <TimerDisplay controller=controller_timer.clone() />
 
-                                        // Camera Component
-                                        <CameraRecorder 
+                                        // Camera Component with session type and timer state
+                                        <CameraRecorder
                                             controller=camera_controller_timer.clone()
+                                            current_session_type=controller_timer.session_type
+                                            timer_state=controller_timer.timer_state
                                         />
 
                                         // Enhanced Timer Controls with Camera Integration
-                                        <TimerControls 
-                                            timer_controller=controller_timer.clone() 
+                                        <TimerControls
+                                            timer_controller=controller_timer.clone()
                                             camera_controller=camera_controller_timer.clone()
                                         />
 
@@ -164,7 +175,7 @@ pub fn App() -> impl IntoView {
                                                     move || controller_sessions.completed_sessions.get()
                                                 }</span>
                                             </p>
-                                            
+
                                             // Show recording status
                                             {
                                                 let controller_status = controller_timer.clone();
@@ -199,21 +210,21 @@ pub fn App() -> impl IntoView {
                                     </div>
                                 }.into_any()
                             },
-                            
+
                             AppTab::History => view! {
                                 <div>
                                     <SessionHistory controller=controller.clone() />
                                 </div>
                             }.into_any(),
-                            
+
                             AppTab::Statistics => view! {
-                                <div>
+                                <div class="max-w-4xl mx-auto">
                                     <SessionStats controller=controller.clone() />
                                 </div>
                             }.into_any(),
-                            
+
                             AppTab::Settings => view! {
-                                <div>
+                                <div class="max-w-2xl mx-auto">
                                     <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-4">"Settings"</h3>
                                     <CameraSettings controller=camera_controller.clone() />
                                 </div>

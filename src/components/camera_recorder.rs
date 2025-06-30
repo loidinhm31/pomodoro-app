@@ -9,7 +9,7 @@ use web_sys::{
 };
 
 use crate::console_log;
-use crate::types::{CameraSettings, CameraState, SessionType};
+use crate::types::{CameraSettings, CameraState, SessionType, TimerState};
 
 #[wasm_bindgen]
 extern "C" {
@@ -34,12 +34,46 @@ pub struct CameraController {
 
 impl CameraController {
     pub fn new() -> Self {
-        Self {
+        let controller = Self {
             camera_state: RwSignal::new(CameraState::Inactive),
             camera_settings: RwSignal::new(CameraSettings::default()),
             current_video_path: RwSignal::new(None),
             is_recording: RwSignal::new(false),
+        };
+
+        // Load saved settings
+        controller.load_settings();
+
+        controller
+    }
+
+    pub fn save_settings(&self) {
+        let settings = self.camera_settings.get();
+        if let Ok(settings_json) = serde_json::to_string(&settings) {
+            if let Some(storage) = web_sys::window()
+                .and_then(|w| w.local_storage().ok())
+                .flatten()
+            {
+                let _ = storage.set_item("pomodoro_camera_settings", &settings_json);
+                console_log!("Camera settings saved");
+            }
         }
+    }
+
+    pub fn load_settings(&self) {
+        if let Some(storage) = web_sys::window()
+            .and_then(|w| w.local_storage().ok())
+            .flatten()
+        {
+            if let Ok(Some(settings_json)) = storage.get_item("pomodoro_camera_settings") {
+                if let Ok(settings) = serde_json::from_str::<CameraSettings>(&settings_json) {
+                    self.camera_settings.set(settings);
+                    console_log!("Camera settings loaded");
+                    return;
+                }
+            }
+        }
+        console_log!("Using default camera settings");
     }
 
     pub async fn initialize_camera(&self) -> Result<(), String> {
@@ -310,7 +344,9 @@ impl CameraController {
 
 #[component]
 pub fn CameraRecorder(
-    controller: CameraController
+    controller: CameraController,
+    current_session_type: RwSignal<SessionType>,
+    timer_state: RwSignal<TimerState>,
 ) -> impl IntoView {
     let video_ref = NodeRef::<leptos::tachys::html::element::Video>::new();
 
@@ -318,14 +354,32 @@ pub fn CameraRecorder(
     Effect::new({
         let controller = controller.clone();
         move |_| {
-            if controller.camera_settings.get().enabled {
-                let controller_clone = controller.clone();
-                spawn_local(async move {
-                    if let Err(e) = controller_clone.initialize_camera().await {
-                        console_log!("Failed to initialize camera: {}", e);
-                        controller_clone.camera_state.set(CameraState::Error(e));
-                    }
-                });
+            let settings = controller.camera_settings.get();
+            let session_type = current_session_type.get(); // Watch for session type changes
+
+            if settings.enabled {
+                // Check if we should initialize camera based on session type
+                let should_initialize = if settings.only_during_breaks {
+                    // Only initialize during breaks if "only_during_breaks" is enabled
+                    session_type == SessionType::ShortBreak || session_type == SessionType::LongBreak
+                } else {
+                    // Initialize for all sessions if "only_during_breaks" is disabled
+                    true
+                };
+
+                if should_initialize {
+                    let controller_clone = controller.clone();
+                    spawn_local(async move {
+                        if let Err(e) = controller_clone.initialize_camera().await {
+                            console_log!("Failed to initialize camera: {}", e);
+                            controller_clone.camera_state.set(CameraState::Error(e));
+                        }
+                    });
+                } else {
+                    // Stop camera if it shouldn't be active for this session type
+                    console_log!("Stopping camera for work session (only_during_breaks enabled)");
+                    controller.stop_camera();
+                }
             } else {
                 controller.stop_camera();
             }
@@ -344,6 +398,24 @@ pub fn CameraRecorder(
             }
         }
     });
+
+    // Helper function to check if we should show preview
+    let should_show_preview = move || {
+        let settings = controller.camera_settings.get();
+        if !settings.enabled {
+            return false;
+        }
+
+        let session_type = current_session_type.get();
+        let timer_running = timer_state.get() == TimerState::Running;
+
+        // Only show preview during breaks or if recording is enabled for all sessions
+        if settings.only_during_breaks {
+            timer_running && (session_type == SessionType::ShortBreak || session_type == SessionType::LongBreak)
+        } else {
+            timer_running || controller.camera_state.get() == CameraState::Recording
+        }
+    };
 
     view! {
         <div class="camera-recorder">
@@ -375,47 +447,80 @@ pub fn CameraRecorder(
                                 </div>
                             </div>
 
-                            // Video preview
+                            // Video preview - only show during appropriate times
                             {move || {
-                                match controller.camera_state.get() {
-                                    CameraState::Recording | CameraState::Stopped => {
-                                        view! {
-                                            <div class="relative">
-                                                <video
-                                                    node_ref=video_ref
-                                                    class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border object-cover"
-                                                    autoplay=true
-                                                    muted=true
-                                                    playsinline=true
-                                                ></video>
-                                                {move || {
-                                                    if controller.camera_state.get() == CameraState::Recording {
-                                                        view! {
-                                                            <div class="absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded animate-pulse">
-                                                                "REC"
-                                                            </div>
-                                                        }.into_any()
-                                                    } else {
-                                                        view! { <div></div> }.into_any()
-                                                    }
-                                                }}
-                                            </div>
-                                        }.into_any()
-                                    },
-                                    CameraState::Initializing => {
-                                        view! {
-                                            <div class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border flex items-center justify-center">
-                                                <div class="text-xs text-gray-500 dark:text-gray-400 text-center">
-                                                    <div class="loading-spinner inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full mb-1"></div>
-                                                    <div>"Initializing..."</div>
+                                if should_show_preview() {
+                                    match controller.camera_state.get() {
+                                        CameraState::Recording | CameraState::Stopped => {
+                                            view! {
+                                                <div class="relative">
+                                                    <video
+                                                        node_ref=video_ref
+                                                        class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border object-cover"
+                                                        autoplay=true
+                                                        muted=true
+                                                        playsinline=true
+                                                    ></video>
+                                                    {move || {
+                                                        if controller.camera_state.get() == CameraState::Recording {
+                                                            view! {
+                                                                <div class="absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded animate-pulse">
+                                                                    "REC"
+                                                                </div>
+                                                            }.into_any()
+                                                        } else {
+                                                            view! { <div></div> }.into_any()
+                                                        }
+                                                    }}
                                                 </div>
-                                            </div>
-                                        }.into_any()
-                                    },
-                                    _ => {
+                                            }.into_any()
+                                        },
+                                        CameraState::Initializing => {
+                                            view! {
+                                                <div class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border flex items-center justify-center">
+                                                    <div class="text-xs text-gray-500 dark:text-gray-400 text-center">
+                                                        <div class="loading-spinner inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full mb-1"></div>
+                                                        <div>"Initializing..."</div>
+                                                    </div>
+                                                </div>
+                                            }.into_any()
+                                        },
+                                        _ => {
+                                            view! {
+                                                <div class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border flex items-center justify-center">
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400">"No Preview"</span>
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    }
+                                } else {
+                                    // Show message when preview is not active
+                                    let session_type = current_session_type.get();
+                                    let settings = controller.camera_settings.get();
+                                    let timer_running = timer_state.get() == TimerState::Running;
+                                    
+                                    if settings.only_during_breaks && session_type == SessionType::Work {
+                                        if timer_running {
+                                            view! {
+                                                <div class="w-full max-w-32 h-24 bg-gray-100 dark:bg-gray-800 rounded border flex items-center justify-center">
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400 text-center">
+                                                        "Camera disabled" <br/> "during work sessions"
+                                                    </span>
+                                                </div>
+                                            }.into_any()
+                                        } else {
+                                            view! {
+                                                <div class="w-full max-w-32 h-24 bg-gray-100 dark:bg-gray-800 rounded border flex items-center justify-center">
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400 text-center">
+                                                        "Preview during" <br/> "breaks only"
+                                                    </span>
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    } else {
                                         view! {
                                             <div class="w-full max-w-32 h-24 bg-gray-200 dark:bg-gray-700 rounded border flex items-center justify-center">
-                                                <span class="text-xs text-gray-500 dark:text-gray-400">"No Preview"</span>
+                                                <span class="text-xs text-gray-500 dark:text-gray-400">"Preview Ready"</span>
                                             </div>
                                         }.into_any()
                                     }

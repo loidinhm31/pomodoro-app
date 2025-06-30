@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::console_log;
@@ -6,12 +7,63 @@ use crate::timer::TimerController;
 use crate::types::{delete_session_from_db, get_sessions_from_db, Session};
 use crate::utils::{format_duration_hours_minutes, format_iso_date};
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
+    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+}
+
 #[component]
 pub fn SessionHistory(controller: TimerController) -> impl IntoView {
     let sessions = RwSignal::new(Vec::<Session>::new());
     let loading = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let filter_type = RwSignal::new(None::<String>);
+
+    // Function to open video file
+    let open_video_file = move |video_path: String| {
+        spawn_local(async move {
+            console_log!("Attempting to open video file: {}", video_path);
+
+            let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+                "path": video_path.clone()
+            }))
+            .unwrap_or(JsValue::NULL);
+
+            let result = invoke("open_video_file", args).await;
+
+            // Try to deserialize the result as a Result<String, String>
+            match serde_wasm_bindgen::from_value::<Result<String, String>>(result) {
+                Ok(Ok(success_msg)) => {
+                    console_log!("Video file opened: {}", success_msg);
+                }
+                Ok(Err(error_msg)) => {
+                    console_log!("Failed to open video file: {}", error_msg);
+                    // Try to reveal in file explorer as fallback
+                    let reveal_args = serde_wasm_bindgen::to_value(&serde_json::json!({
+                        "path": video_path
+                    }))
+                    .unwrap_or(JsValue::NULL);
+
+                    let reveal_result = invoke("reveal_in_explorer", reveal_args).await;
+                    match serde_wasm_bindgen::from_value::<Result<String, String>>(reveal_result) {
+                        Ok(Ok(reveal_success)) => {
+                            console_log!("File location revealed: {}", reveal_success);
+                        }
+                        Ok(Err(reveal_error)) => {
+                            console_log!("Failed to reveal in explorer: {}", reveal_error);
+                        }
+                        Err(_) => {
+                            console_log!("Unexpected response from reveal command");
+                        }
+                    }
+                }
+                Err(_) => {
+                    console_log!("Unexpected response format from open_video_file command");
+                }
+            }
+        });
+    };
 
     // Load sessions on component mount
     let load_sessions = {
@@ -36,7 +88,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                 match get_sessions_from_db(query_limit, query_session_type).await {
                     Ok(loaded_sessions) => {
                         sessions.set(loaded_sessions);
-                    },
+                    }
                     Err(e) => {
                         console_log!("Error loading sessions: {}", e);
                         error.set(Some(e));
@@ -85,7 +137,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                         // Reload stats
                         controller.load_session_stats();
                         console_log!("Session deleted successfully!");
-                    },
+                    }
                     Err(e) => {
                         console_log!("Error deleting session: {}", e);
                     }
@@ -98,9 +150,9 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
         <div class="mt-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Session History</h3>
-                
+
                 // Filter dropdown
-                <select 
+                <select
                     class="px-3 py-1 border rounded text-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-700 dark:text-gray-300"
                     on:change=move |ev| {
                         let value = event_target_value(&ev);
@@ -161,7 +213,11 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                 {session_list.into_iter().map(|session| {
                                     let session_id = session.id.clone();
                                     let delete_session = delete_session.clone();
-                                    
+                                    let open_video = open_video_file.clone();
+                                    let has_video = session.video_path.is_some();
+                                    let video_path = session.video_path.clone();
+                                    let is_break_session = session.session_type == "ShortBreak" || session.session_type == "LongBreak";
+
                                     let session_color = match session.session_type.as_str() {
                                         "Work" => "border-l-red-500 bg-red-50 dark:bg-red-900/20",
                                         "ShortBreak" => "border-l-green-500 bg-green-50 dark:bg-green-900/20",
@@ -173,20 +229,81 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                         <div class=format!("border-l-4 p-3 rounded-r-lg {}", session_color)>
                                             <div class="flex justify-between items-start">
                                                 <div class="flex-grow">
-                                                    <div class="flex items-center space-x-2">
+                                                    <div class="flex items-center space-x-2 mb-1">
                                                         <span class="font-medium text-gray-800 dark:text-white">
                                                             {session.session_type.clone()}
                                                         </span>
                                                         <span class="text-sm text-gray-500 dark:text-gray-400">
                                                             {format_duration_hours_minutes(session.actual_duration)}
                                                         </span>
+
+                                                        // Video indicator for break sessions
+                                                        {if is_break_session {
+                                                            if has_video {
+                                                                view! {
+                                                                    <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-1 rounded" title="Video recorded">
+                                                                        "📹"
+                                                                    </span>
+                                                                }.into_any()
+                                                            } else {
+                                                                view! {
+                                                                    <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1 rounded" title="No video recording">
+                                                                        "📹❌"
+                                                                    </span>
+                                                                }.into_any()
+                                                            }
+                                                        } else {
+                                                            view! { <div></div> }.into_any()
+                                                        }}
                                                     </div>
-                                                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+
+                                                    <div class="text-xs text-gray-500 dark:text-gray-400">
                                                         {format_iso_date(&session.created_at)}
                                                     </div>
+
+                                                    // Video file info and controls
+                                                    {if let Some(video_path_display) = video_path.clone() {
+                                                        let filename = video_path_display.split('/').last().unwrap_or("unknown").to_string();
+                                                        let filename_display = filename.clone();
+                                                        let filename_title = filename.clone();
+                                                        let video_path_for_open = video_path_display.clone();
+
+                                                        view! {
+                                                            <div class="mt-2 p-3 bg-white dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                                                                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+                                                                    <div class="flex-grow min-w-0">
+                                                                        <div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                                            "Video Recording:"
+                                                                        </div>
+                                                                        <div class="text-xs text-gray-500 dark:text-gray-400 break-all" title={filename_title}>
+                                                                            {filename_display}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="flex-shrink-0">
+                                                                        <button
+                                                                            class="px-3 py-1.5 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors whitespace-nowrap"
+                                                                            on:click=move |_| open_video(video_path_for_open.clone())
+                                                                            title="Open video file"
+                                                                        >
+                                                                            "📹 Open Video"
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }.into_any()
+                                                    } else if is_break_session {
+                                                        view! {
+                                                            <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 italic">
+                                                                "No video recording for this break session"
+                                                            </div>
+                                                        }.into_any()
+                                                    } else {
+                                                        view! { <div></div> }.into_any()
+                                                    }}
                                                 </div>
+
                                                 <button
-                                                    class="text-red-500 hover:text-red-700 text-sm ml-2"
+                                                    class="text-red-500 hover:text-red-700 text-sm ml-2 flex-shrink-0"
                                                     on:click=move |_| delete_session(session_id.clone())
                                                     title="Delete session"
                                                 >
@@ -200,6 +317,24 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                         }.into_any()
                     }
                 }}
+            </div>
+
+            // Legend for video indicators
+            <div class="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded text-sm">
+                <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-3">"Legend:"</h4>
+                <div class="space-y-2 text-gray-600 dark:text-gray-400">
+                    <div class="flex items-center space-x-3">
+                        <span class="bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded text-xs">"📹 Video"</span>
+                        <span>"Break session with video recording available"</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded text-xs">"📹 No Video"</span>
+                        <span>"Break session without video recording"</span>
+                    </div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-3 pl-2 border-l-2 border-gray-300 dark:border-gray-600">
+                        <strong>"Note:"</strong> " Video indicators only appear for break sessions (Short Break and Long Break). Work sessions do not show video indicators."
+                    </div>
+                </div>
             </div>
         </div>
     }

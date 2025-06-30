@@ -59,6 +59,136 @@ async fn list_video_files(app: tauri::AppHandle) -> Result<Vec<String>, String> 
     Ok(files)
 }
 
+#[tauri::command]
+async fn open_video_file(path: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(&path);
+
+    // Check if file exists
+    if !path_buf.exists() {
+        return Err(format!("Video file not found: {}", path));
+    }
+
+    // Try to open the file with the default application
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let result = Command::new("cmd")
+            .args(&["/C", "start", "", &path])
+            .status();
+
+        match result {
+            Ok(status) if status.success() => Ok("File opened successfully".to_string()),
+            Ok(_) => Err("Failed to open video file".to_string()),
+            Err(e) => Err(format!("Error opening video file: {}", e)),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let result = Command::new("open").arg(&path).status();
+
+        match result {
+            Ok(status) if status.success() => Ok("File opened successfully".to_string()),
+            Ok(_) => Err("Failed to open video file".to_string()),
+            Err(e) => Err(format!("Error opening video file: {}", e)),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let result = Command::new("xdg-open").arg(&path).status();
+
+        match result {
+            Ok(status) if status.success() => Ok("File opened successfully".to_string()),
+            Ok(_) => Err("Failed to open video file".to_string()),
+            Err(e) => Err(format!("Error opening video file: {}", e)),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Opening files is not supported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
+async fn reveal_in_explorer(path: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(&path);
+
+    // Check if file exists
+    if !path_buf.exists() {
+        return Err(format!("Video file not found: {}", path));
+    }
+
+    // Try to reveal the file in the file explorer
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let result = Command::new("explorer").args(&["/select,", &path]).status();
+
+        match result {
+            Ok(status) if status.success() => Ok("File revealed in explorer".to_string()),
+            Ok(_) => Err("Failed to reveal file in explorer".to_string()),
+            Err(e) => Err(format!("Error revealing file: {}", e)),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let result = Command::new("open").args(&["-R", &path]).status();
+
+        match result {
+            Ok(status) if status.success() => Ok("File revealed in Finder".to_string()),
+            Ok(_) => Err("Failed to reveal file in Finder".to_string()),
+            Err(e) => Err(format!("Error revealing file: {}", e)),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        // Try to use the file manager to show the file
+        // First try with dbus (works with most modern file managers)
+        let result = Command::new("dbus-send")
+            .args(&[
+                "--session",
+                "--dest=org.freedesktop.FileManager1",
+                "--type=method_call",
+                "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1.ShowItems",
+                &format!("array:string:file://{}", path),
+                "string:",
+            ])
+            .status();
+
+        if result.is_ok() && result.unwrap().success() {
+            return Ok("File revealed in file manager".to_string());
+        }
+
+        // Fallback: open the parent directory
+        if let Some(parent) = path_buf.parent() {
+            let result = Command::new("xdg-open").arg(parent).status();
+
+            match result {
+                Ok(status) if status.success() => Ok("Parent directory opened".to_string()),
+                Ok(_) => Err("Failed to open parent directory".to_string()),
+                Err(e) => Err(format!("Error opening directory: {}", e)),
+            }
+        } else {
+            Err("Cannot determine parent directory".to_string())
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Revealing files is not supported on this platform".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -67,7 +197,9 @@ pub fn run() {
             greet,
             get_videos_dir,
             save_video_file,
-            list_video_files
+            list_video_files,
+            open_video_file,
+            reveal_in_explorer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
