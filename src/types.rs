@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use web_sys::{window, Storage};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerState {
@@ -39,6 +40,14 @@ impl SessionType {
         }
     }
 
+    pub fn to_string(&self) -> String {
+        match self {
+            SessionType::Work => "Work".to_string(),
+            SessionType::ShortBreak => "ShortBreak".to_string(),
+            SessionType::LongBreak => "LongBreak".to_string(),
+        }
+    }
+
     pub fn next_session(&self, completed_sessions: u32) -> Self {
         match self {
             SessionType::Work => {
@@ -56,4 +65,186 @@ impl SessionType {
 #[derive(Serialize, Deserialize)]
 pub struct GreetArgs<'a> {
     pub name: &'a str,
+}
+
+// Database-related types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub id: String,
+    pub session_type: String,
+    pub planned_duration: u32,
+    pub actual_duration: u32,
+    pub start_time: String, // ISO 8601 string
+    pub end_time: String,   // ISO 8601 string
+    pub completed: bool,
+    pub created_at: String, // ISO 8601 string
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewSession {
+    pub session_type: String,
+    pub planned_duration: u32,
+    pub actual_duration: u32,
+    pub start_time: String,
+    pub end_time: String,
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStats {
+    pub total_sessions: u32,
+    pub completed_sessions: u32,
+    pub total_focus_time: u32,
+    pub total_break_time: u32,
+    pub work_sessions: u32,
+    pub short_break_sessions: u32,
+    pub long_break_sessions: u32,
+    pub average_session_duration: f64,
+    pub completion_rate: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionQuery {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+    pub session_type: Option<String>,
+    pub completed: Option<bool>,
+}
+
+// localStorage-based storage for now (we'll upgrade to SQLite later)
+fn get_local_storage() -> Option<Storage> {
+    window()?.local_storage().ok()?
+}
+
+fn generate_session_id() -> String {
+    format!("session_{}", js_sys::Date::now() as u64)
+}
+
+pub async fn save_session_to_db(session: NewSession) -> Result<String, String> {
+    let storage = get_local_storage().ok_or("Cannot access localStorage")?;
+    let session_id = generate_session_id();
+    let now = js_sys::Date::new_0().to_iso_string();
+
+    let session_record = Session {
+        id: session_id.clone(),
+        session_type: session.session_type,
+        planned_duration: session.planned_duration,
+        actual_duration: session.actual_duration,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        completed: session.completed,
+        created_at: now.into(),
+    };
+
+    // Get existing sessions
+    let mut sessions = get_all_sessions().await.unwrap_or_default();
+    sessions.push(session_record);
+
+    // Save updated sessions list
+    let all_sessions_json = serde_json::to_string(&sessions).map_err(|e| e.to_string())?;
+    storage.set_item("pomodoro_sessions", &all_sessions_json).map_err(|e| format!("{:?}", e))?;
+
+    Ok(session_id)
+}
+
+pub async fn get_sessions_from_db(limit: Option<u32>, session_type: Option<String>) -> Result<Vec<Session>, String> {
+    let mut sessions = get_all_sessions().await.unwrap_or_default();
+
+    // Filter by session type if provided
+    if let Some(filter_type) = session_type {
+        sessions.retain(|s| s.session_type == filter_type);
+    }
+
+    // Sort by created_at descending (newest first)
+    sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    // Apply limit
+    if let Some(limit) = limit {
+        sessions.truncate(limit as usize);
+    }
+
+    Ok(sessions)
+}
+
+async fn get_all_sessions() -> Result<Vec<Session>, String> {
+    let storage = get_local_storage().ok_or("Cannot access localStorage")?;
+
+    match storage.get_item("pomodoro_sessions").map_err(|e| format!("{:?}", e))? {
+        Some(json) => {
+            serde_json::from_str(&json).map_err(|e| e.to_string())
+        },
+        None => Ok(Vec::new()),
+    }
+}
+
+pub async fn get_session_stats_from_db() -> Result<SessionStats, String> {
+    let sessions = get_all_sessions().await.unwrap_or_default();
+
+    let total_sessions = sessions.len() as u32;
+    let completed_sessions = sessions.iter().filter(|s| s.completed).count() as u32;
+
+    let work_sessions = sessions.iter()
+        .filter(|s| s.session_type == "Work" && s.completed)
+        .count() as u32;
+
+    let short_break_sessions = sessions.iter()
+        .filter(|s| s.session_type == "ShortBreak" && s.completed)
+        .count() as u32;
+
+    let long_break_sessions = sessions.iter()
+        .filter(|s| s.session_type == "LongBreak" && s.completed)
+        .count() as u32;
+
+    let total_focus_time = sessions.iter()
+        .filter(|s| s.session_type == "Work" && s.completed)
+        .map(|s| s.actual_duration)
+        .sum::<u32>();
+
+    let total_break_time = sessions.iter()
+        .filter(|s| (s.session_type == "ShortBreak" || s.session_type == "LongBreak") && s.completed)
+        .map(|s| s.actual_duration)
+        .sum::<u32>();
+
+    let average_session_duration = if completed_sessions > 0 {
+        sessions.iter()
+            .filter(|s| s.completed)
+            .map(|s| s.actual_duration as f64)
+            .sum::<f64>() / completed_sessions as f64
+    } else {
+        0.0
+    };
+
+    let completion_rate = if total_sessions > 0 {
+        (completed_sessions as f64 / total_sessions as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(SessionStats {
+        total_sessions,
+        completed_sessions,
+        total_focus_time,
+        total_break_time,
+        work_sessions,
+        short_break_sessions,
+        long_break_sessions,
+        average_session_duration,
+        completion_rate,
+    })
+}
+
+pub async fn delete_session_from_db(session_id: String) -> Result<bool, String> {
+    let storage = get_local_storage().ok_or("Cannot access localStorage")?;
+    let mut sessions = get_all_sessions().await.unwrap_or_default();
+
+    let initial_len = sessions.len();
+    sessions.retain(|s| s.id != session_id);
+
+    if sessions.len() < initial_len {
+        let all_sessions_json = serde_json::to_string(&sessions).map_err(|e| e.to_string())?;
+        storage.set_item("pomodoro_sessions", &all_sessions_json).map_err(|e| format!("{:?}", e))?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
