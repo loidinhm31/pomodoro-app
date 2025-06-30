@@ -1,3 +1,4 @@
+// src/timer.rs
 use crate::components::CameraController;
 use crate::console_log;
 use crate::types::{
@@ -8,6 +9,12 @@ use crate::utils::{clearInterval, get_current_iso_time, setInterval};
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
+    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+}
 
 #[derive(Clone)]
 pub struct TimerController {
@@ -184,6 +191,134 @@ impl TimerController {
         });
     }
 
+    async fn send_session_notification(&self, session_type: SessionType) {
+        let session_type_str = session_type.to_string();
+        let duration_minutes = session_type.duration_minutes();
+
+        let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+            "sessionType": session_type_str,
+            "durationMinutes": duration_minutes
+        })).unwrap_or(JsValue::NULL);
+
+        let result = invoke("session_completed_notification", args).await;
+
+        // Try to deserialize as Result<String, String> to check for errors
+        match serde_wasm_bindgen::from_value::<Result<String, String>>(result) {
+            Ok(Ok(_)) => {
+                console_log!("Session completion notification sent successfully");
+            }
+            Ok(Err(e)) => {
+                console_log!("Failed to send session notification: {}", e);
+                // Fallback to web notification if Tauri fails
+                self.send_web_notification(session_type).await;
+            }
+            Err(_) => {
+                console_log!("Unexpected response from session notification command");
+                // Fallback to web notification if Tauri fails
+                self.send_web_notification(session_type).await;
+            }
+        }
+    }
+
+    // Fallback web notification for when Tauri notifications fail
+    async fn send_web_notification(&self, session_type: SessionType) {
+        // Try to use Web Notification API as fallback
+        if let Some(window) = web_sys::window() {
+            // Try browser notification first
+            if let Ok(notification_constructor) = js_sys::Reflect::get(&window, &"Notification".into()) {
+                // Check permission
+                let permission = js_sys::Reflect::get(&notification_constructor, &"permission".into())
+                    .unwrap_or_else(|_| "denied".into());
+
+                let mut permission_str = permission.as_string().unwrap_or("denied".to_string());
+
+                // Request permission if needed
+                if permission_str == "default" {
+                    if let Ok(request_permission_fn) = js_sys::Reflect::get(&notification_constructor, &"requestPermission".into()) {
+                        if let Ok(function) = request_permission_fn.dyn_into::<js_sys::Function>() {
+                            let permission_promise = function.call0(&notification_constructor);
+                            if let Ok(promise_value) = permission_promise {
+                                if let Ok(promise) = promise_value.dyn_into::<js_sys::Promise>() {
+                                    let permission_result = wasm_bindgen_futures::JsFuture::from(promise)
+                                        .await
+                                        .unwrap_or_else(|_| "denied".into());
+
+                                    permission_str = permission_result.as_string().unwrap_or("denied".to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Create notification if permission is granted
+                if permission_str == "granted" {
+                    let title = "Pomodoro Timer";
+                    let body = match session_type {
+                        SessionType::Work => "Work session completed! Time for a break!",
+                        SessionType::ShortBreak => "Short break completed! Back to work!",
+                        SessionType::LongBreak => "Long break completed! Ready for focused work!",
+                    };
+
+                    let options = js_sys::Object::new();
+                    js_sys::Reflect::set(&options, &"body".into(), &body.into()).unwrap();
+                    js_sys::Reflect::set(&options, &"icon".into(), &"/public/tauri.svg".into()).unwrap();
+
+                    let args = js_sys::Array::new();
+                    args.push(&title.into());
+                    args.push(&options);
+
+                    let _notification_instance = js_sys::Reflect::construct(
+                        &notification_constructor.into(),
+                        &args,
+                    );
+
+                    console_log!("Web notification sent as fallback");
+                    return; // Successfully sent notification, no need for audio fallback
+                }
+            }
+        }
+
+        // Audio beep fallback if notifications fail
+        self.play_audio_beep().await;
+    }
+
+    // Separate method for audio beep
+    async fn play_audio_beep(&self) {
+        if let Some(window) = web_sys::window() {
+            // Try to create audio context
+            if let Ok(audio_context_constructor) = js_sys::Reflect::get(&window, &"AudioContext".into()) {
+                if let Ok(audio_context) = js_sys::Reflect::construct(&audio_context_constructor.into(), &js_sys::Array::new()) {
+                    // Try to get a proper AudioContext
+                    if let Ok(ctx) = audio_context.dyn_into::<web_sys::AudioContext>() {
+                        if let (Ok(oscillator), Ok(gain_node)) = (
+                            ctx.create_oscillator(),
+                            ctx.create_gain()
+                        ) {
+                            oscillator.frequency().set_value(800.0);
+                            oscillator.set_type(web_sys::OscillatorType::Sine);
+
+                            gain_node.gain().set_value(0.3);
+
+                            let _ = oscillator.connect_with_audio_node(&gain_node);
+                            let _ = gain_node.connect_with_audio_node(&ctx.destination());
+
+                            let _ = oscillator.start();
+
+                            // Stop after 300ms
+                            let stop_time = ctx.current_time() + 0.3;
+                            let _ = oscillator.stop_with_when(stop_time);
+
+                            console_log!("Played audio beep as fallback notification");
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        console_log!("Could not play audio beep - audio context unavailable");
+    }
+
     pub fn complete_session_with_camera(&self, camera_controller: Option<&CameraController>) {
         console_log!("Timer completed with camera integration!");
 
@@ -210,6 +345,12 @@ impl TimerController {
             .current_session_id
             .get()
             .unwrap_or_else(|| generate_session_id());
+
+        // Send notification FIRST (before any async operations)
+        let controller_for_notification = self.clone();
+        spawn_local(async move {
+            controller_for_notification.send_session_notification(session_type).await;
+        });
 
         // Handle camera recording completion
         if let Some(camera) = camera_controller {
