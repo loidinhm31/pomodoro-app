@@ -56,7 +56,7 @@ impl SessionType {
                 } else {
                     SessionType::ShortBreak
                 }
-            },
+            }
             SessionType::ShortBreak | SessionType::LongBreak => SessionType::Work,
         }
     }
@@ -74,10 +74,11 @@ pub struct Session {
     pub session_type: String,
     pub planned_duration: u32,
     pub actual_duration: u32,
-    pub start_time: String, // ISO 8601 string
-    pub end_time: String,   // ISO 8601 string
+    pub start_time: String,
+    pub end_time: String,
     pub completed: bool,
-    pub created_at: String, // ISO 8601 string
+    pub created_at: String,
+    pub video_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +89,35 @@ pub struct NewSession {
     pub start_time: String,
     pub end_time: String,
     pub completed: bool,
+    pub video_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CameraState {
+    Inactive,
+    Initializing,
+    Recording,
+    Stopped,
+    Error(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CameraSettings {
+    pub enabled: bool,
+    pub only_during_breaks: bool,
+    pub video_quality: String, // "low", "medium", "high"
+    pub max_duration_minutes: u32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            only_during_breaks: true,
+            video_quality: "medium".to_string(),
+            max_duration_minutes: 30,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,12 +141,11 @@ pub struct SessionQuery {
     pub completed: Option<bool>,
 }
 
-// localStorage-based storage for now (we'll upgrade to SQLite later)
 fn get_local_storage() -> Option<Storage> {
     window()?.local_storage().ok()?
 }
 
-fn generate_session_id() -> String {
+pub fn generate_session_id() -> String {
     format!("session_{}", js_sys::Date::now() as u64)
 }
 
@@ -134,6 +163,7 @@ pub async fn save_session_to_db(session: NewSession) -> Result<String, String> {
         end_time: session.end_time,
         completed: session.completed,
         created_at: now.into(),
+        video_path: session.video_path,
     };
 
     // Get existing sessions
@@ -142,12 +172,17 @@ pub async fn save_session_to_db(session: NewSession) -> Result<String, String> {
 
     // Save updated sessions list
     let all_sessions_json = serde_json::to_string(&sessions).map_err(|e| e.to_string())?;
-    storage.set_item("pomodoro_sessions", &all_sessions_json).map_err(|e| format!("{:?}", e))?;
+    storage
+        .set_item("pomodoro_sessions", &all_sessions_json)
+        .map_err(|e| format!("{:?}", e))?;
 
     Ok(session_id)
 }
 
-pub async fn get_sessions_from_db(limit: Option<u32>, session_type: Option<String>) -> Result<Vec<Session>, String> {
+pub async fn get_sessions_from_db(
+    limit: Option<u32>,
+    session_type: Option<String>,
+) -> Result<Vec<Session>, String> {
     let mut sessions = get_all_sessions().await.unwrap_or_default();
 
     // Filter by session type if provided
@@ -169,10 +204,11 @@ pub async fn get_sessions_from_db(limit: Option<u32>, session_type: Option<Strin
 async fn get_all_sessions() -> Result<Vec<Session>, String> {
     let storage = get_local_storage().ok_or("Cannot access localStorage")?;
 
-    match storage.get_item("pomodoro_sessions").map_err(|e| format!("{:?}", e))? {
-        Some(json) => {
-            serde_json::from_str(&json).map_err(|e| e.to_string())
-        },
+    match storage
+        .get_item("pomodoro_sessions")
+        .map_err(|e| format!("{:?}", e))?
+    {
+        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
         None => Ok(Vec::new()),
     }
 }
@@ -183,33 +219,42 @@ pub async fn get_session_stats_from_db() -> Result<SessionStats, String> {
     let total_sessions = sessions.len() as u32;
     let completed_sessions = sessions.iter().filter(|s| s.completed).count() as u32;
 
-    let work_sessions = sessions.iter()
+    let work_sessions = sessions
+        .iter()
         .filter(|s| s.session_type == "Work" && s.completed)
         .count() as u32;
 
-    let short_break_sessions = sessions.iter()
+    let short_break_sessions = sessions
+        .iter()
         .filter(|s| s.session_type == "ShortBreak" && s.completed)
         .count() as u32;
 
-    let long_break_sessions = sessions.iter()
+    let long_break_sessions = sessions
+        .iter()
         .filter(|s| s.session_type == "LongBreak" && s.completed)
         .count() as u32;
 
-    let total_focus_time = sessions.iter()
+    let total_focus_time = sessions
+        .iter()
         .filter(|s| s.session_type == "Work" && s.completed)
         .map(|s| s.actual_duration)
         .sum::<u32>();
 
-    let total_break_time = sessions.iter()
-        .filter(|s| (s.session_type == "ShortBreak" || s.session_type == "LongBreak") && s.completed)
+    let total_break_time = sessions
+        .iter()
+        .filter(|s| {
+            (s.session_type == "ShortBreak" || s.session_type == "LongBreak") && s.completed
+        })
         .map(|s| s.actual_duration)
         .sum::<u32>();
 
     let average_session_duration = if completed_sessions > 0 {
-        sessions.iter()
+        sessions
+            .iter()
             .filter(|s| s.completed)
             .map(|s| s.actual_duration as f64)
-            .sum::<f64>() / completed_sessions as f64
+            .sum::<f64>()
+            / completed_sessions as f64
     } else {
         0.0
     };
@@ -242,7 +287,9 @@ pub async fn delete_session_from_db(session_id: String) -> Result<bool, String> 
 
     if sessions.len() < initial_len {
         let all_sessions_json = serde_json::to_string(&sessions).map_err(|e| e.to_string())?;
-        storage.set_item("pomodoro_sessions", &all_sessions_json).map_err(|e| format!("{:?}", e))?;
+        storage
+            .set_item("pomodoro_sessions", &all_sessions_json)
+            .map_err(|e| format!("{:?}", e))?;
         Ok(true)
     } else {
         Ok(false)

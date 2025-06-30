@@ -1,10 +1,10 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::types::{Session, get_sessions_from_db, delete_session_from_db};
-use crate::utils::{format_duration_hours_minutes, format_iso_date};
-use crate::timer::TimerController;
 use crate::console_log;
+use crate::timer::TimerController;
+use crate::types::{delete_session_from_db, get_sessions_from_db, Session};
+use crate::utils::{format_duration_hours_minutes, format_iso_date};
 
 #[component]
 pub fn SessionHistory(controller: TimerController) -> impl IntoView {

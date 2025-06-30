@@ -1,6 +1,6 @@
-use leptos::prelude::*;
 use crate::timer::TimerController;
 use crate::utils::format_duration_hours_minutes;
+use leptos::prelude::*;
 
 #[component]
 pub fn SessionStats(controller: TimerController) -> impl IntoView {

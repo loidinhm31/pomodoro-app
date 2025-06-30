@@ -1,6 +1,6 @@
-use leptos::prelude::*;
-use crate::types::{TimerState, SessionType};
 use crate::timer::TimerController;
+use crate::types::{SessionType, TimerState};
+use leptos::prelude::*;
 
 #[component]
 pub fn SessionSelector(controller: TimerController) -> impl IntoView {
