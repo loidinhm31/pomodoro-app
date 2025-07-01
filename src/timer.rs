@@ -120,71 +120,6 @@ impl TimerController {
         console_log!("Timer stopped");
     }
 
-    pub fn complete_session(&self) {
-        console_log!("Timer completed!");
-
-        // Stop the current timer
-        if let Some(id) = self.interval_id.get() {
-            clearInterval(id);
-            self.interval_id.set(None);
-        }
-        self.timer_state.set(TimerState::Stopped);
-
-        // Calculate session data
-        let session_type = self.session_type.get();
-        let settings = self.timer_settings.get();
-        let planned_duration = session_type.duration_minutes(&settings) * 60;
-        let actual_duration = planned_duration - self.time_remaining.get();
-        let end_time = get_current_iso_time();
-        let start_time = self.session_start_time.get().unwrap_or_else(|| {
-            // Fallback: calculate start time based on duration
-            let now = js_sys::Date::new_0();
-            let start_ms = now.get_time() - (actual_duration as f64 * 1000.0);
-            js_sys::Date::new(&start_ms.into()).to_iso_string().into()
-        });
-
-        // Save session to database
-        let new_session = NewSession {
-            session_type: session_type.to_string(),
-            planned_duration,
-            actual_duration,
-            start_time,
-            end_time,
-            completed: true,
-            video_path: None,
-        };
-
-        self.save_session(new_session);
-
-        // Update work session count if this was a work session
-        if session_type == SessionType::Work {
-            let current_cycle_sessions = self.current_cycle_work_sessions.get();
-            self.current_cycle_work_sessions.set(current_cycle_sessions + 1);
-        }
-
-        // Auto-switch to next session type
-        let current_cycle_sessions = self.current_cycle_work_sessions.get();
-        let next_session = session_type.next_session(current_cycle_sessions, &settings);
-        self.session_type.set(next_session);
-        self.time_remaining
-            .set(next_session.duration_minutes(&settings) * 60);
-        self.session_start_time.set(None);
-        self.current_session_id.set(None);
-
-        console_log!("Switched to next session: {:?}", next_session);
-
-        // Auto-start next session if enabled
-        if self.should_auto_start_session(next_session) {
-            console_log!("Auto-starting next session");
-            // Small delay to allow UI to update
-            let controller = self.clone();
-            spawn_local(async move {
-                gloo_timers::future::sleep(std::time::Duration::from_millis(1000)).await;
-                controller.start_timer();
-            });
-        }
-    }
-
     pub fn set_session_type(&self, session_type: SessionType) {
         if self.timer_state.get() == TimerState::Stopped {
             self.session_type.set(session_type);
@@ -203,21 +138,29 @@ impl TimerController {
     pub fn get_next_session_info(&self) -> (SessionType, String) {
         let current_cycle_sessions = self.current_cycle_work_sessions.get();
         let settings = self.timer_settings.get();
-        let next_session = self.session_type.get().next_session(current_cycle_sessions, &settings);
+
+        // If current session is work, we need to predict what happens after it completes
+        let hypothetical_work_sessions = if self.session_type.get() == SessionType::Work {
+            current_cycle_sessions + 1
+        } else {
+            current_cycle_sessions
+        };
+
+        let next_session = self.session_type.get().next_session(hypothetical_work_sessions, &settings);
 
         let description = match next_session {
             SessionType::Work => "Back to work!".to_string(),
             SessionType::ShortBreak => {
-                format!("Short break after {} work session(s)", current_cycle_sessions + 1)
+                format!("Short break after {} work session(s)", hypothetical_work_sessions)
             },
             SessionType::LongBreak => {
-                format!("Long break after {} work sessions!", current_cycle_sessions + 1)
+                format!("Long break after {} work sessions!", hypothetical_work_sessions)
             },
         };
 
         (next_session, description)
     }
-
+    
     fn should_auto_start_session(&self, session_type: SessionType) -> bool {
         let settings = self.timer_settings.get();
         match session_type {
@@ -431,11 +374,20 @@ impl TimerController {
             controller_for_notification.send_session_notification(session_type).await;
         });
 
-        // Update work session count if this was a work session
-        if session_type == SessionType::Work {
+        // Update work session count FIRST (if it's a work session)
+        let updated_work_sessions = if session_type == SessionType::Work {
             let current_cycle_sessions = self.current_cycle_work_sessions.get();
-            self.current_cycle_work_sessions.set(current_cycle_sessions + 1);
-        }
+            let new_count = current_cycle_sessions + 1;
+            self.current_cycle_work_sessions.set(new_count);
+            new_count
+        } else {
+            self.current_cycle_work_sessions.get()
+        };
+
+        // NOW determine next session type using the UPDATED count
+        let next_session = session_type.next_session(updated_work_sessions, &settings);
+
+        console_log!("Current work sessions: {}, Next session: {:?}", updated_work_sessions, next_session);
 
         // Handle camera recording completion
         if let Some(camera) = camera_controller {
@@ -488,9 +440,7 @@ impl TimerController {
             self.save_session(new_session);
         }
 
-        // Auto-switch to next session type
-        let current_cycle_sessions = self.current_cycle_work_sessions.get();
-        let next_session = session_type.next_session(current_cycle_sessions, &settings);
+        // Switch to next session type
         self.session_type.set(next_session);
         self.time_remaining
             .set(next_session.duration_minutes(&settings) * 60);
@@ -510,7 +460,7 @@ impl TimerController {
             });
         }
     }
-
+    
     pub fn start_timer_with_camera(&self, camera_controller: Option<&CameraController>) {
         // Start the timer first
         self.start_timer();

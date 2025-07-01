@@ -97,17 +97,25 @@ impl SessionType {
     pub fn next_session(&self, completed_work_sessions: u32, settings: &TimerSettings) -> Self {
         match self {
             SessionType::Work => {
-                // Check if it's time for a long break
-                if (completed_work_sessions + 1) % settings.sessions_before_long_break == 0 {
+                let just_completed_session = completed_work_sessions;
+
+                // Check if it's time for a long break (takes priority)
+                if just_completed_session % settings.sessions_before_long_break == 0 {
                     SessionType::LongBreak
-                } else if (completed_work_sessions + 1) % settings.sessions_before_short_break == 0 {
-                    SessionType::ShortBreak
-                } else {
-                    // This shouldn't happen with normal settings, but fallback to short break
+                }
+                // Check if it's time for a short break
+                else if just_completed_session % settings.sessions_before_short_break == 0 {
                     SessionType::ShortBreak
                 }
+                // Continue with work if no break needed
+                else {
+                    SessionType::Work
+                }
             }
-            SessionType::ShortBreak | SessionType::LongBreak => SessionType::Work,
+            SessionType::ShortBreak | SessionType::LongBreak => {
+                // After any break, always go back to work
+                SessionType::Work
+            }
         }
     }
 

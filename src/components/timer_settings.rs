@@ -366,28 +366,42 @@ pub fn TimerSettings(controller: TimerController) -> impl IntoView {
                                 <div class="mt-2">
                                     <span class="font-medium">"Example sequence:"</span>
                                     <div class="mt-1 flex flex-wrap gap-1">
-                                        {(1..=8).map(|i| {
-                                            let session_type = if i % long_break_interval == 0 {
-                                                "Long Break"
-                                            } else if i % short_break_interval == 0 {
-                                                "Short Break" 
-                                            } else {
-                                                "Work"
-                                            };
+                                        {
+                                            let current_settings = settings.get();
+                                            let short_break_interval = current_settings.sessions_before_short_break;
+                                            let long_break_interval = current_settings.sessions_before_long_break;
                                             
-                                            let color = match session_type {
-                                                "Work" => "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200",
-                                                "Short Break" => "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200",
-                                                "Long Break" => "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200",
-                                                _ => "bg-gray-100 text-gray-800"
-                                            };
+                                            // Generate correct sequence
+                                            let mut sequence = Vec::new();
+                                            let mut work_session_count = 0;
+                                            let max_sequence_length = 12;
                                             
-                                            view! {
-                                                <span class=format!("px-2 py-1 rounded text-xs {}", color)>
-                                                    {i}". " {session_type}
-                                                </span>
+                                            while sequence.len() < max_sequence_length {
+                                                // Add work session
+                                                work_session_count += 1;
+                                                sequence.push((format!("Work {}", work_session_count), "bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200"));
+                                                
+                                                // Check if we need a break after this work session
+                                                if work_session_count % long_break_interval == 0 {
+                                                    sequence.push(("Long Break".to_string(), "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200"));
+                                                } else if work_session_count % short_break_interval == 0 {
+                                                    sequence.push(("Short Break".to_string(), "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200"));
+                                                }
+                                                
+                                                // Break if we've reached our limit
+                                                if sequence.len() >= max_sequence_length {
+                                                    break;
+                                                }
                                             }
-                                        }).collect::<Vec<_>>()}
+                                            
+                                            sequence.into_iter().take(max_sequence_length).enumerate().map(|(i, (session_type, color))| {
+                                                view! {
+                                                    <span class=format!("px-2 py-1 rounded text-xs {}", color)>
+                                                        {i + 1}". " {session_type}
+                                                    </span>
+                                                }
+                                            }).collect::<Vec<_>>()
+                                        }
                                     </div>
                                 </div>
                             </div>
