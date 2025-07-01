@@ -366,8 +366,8 @@ impl TimerController {
 
                             let _ = oscillator.start();
 
-                            // Stop after 300ms
-                            let stop_time = ctx.current_time() + 0.3;
+                            // Stop after 3000ms
+                            let stop_time = ctx.current_time() + 3.0;
                             let _ = oscillator.stop_with_when(stop_time);
 
                             console_log!("Played audio beep as fallback notification");

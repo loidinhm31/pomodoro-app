@@ -12,7 +12,7 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                     "Active Task"
                 </h4>
                 <button
-                    class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+                    class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
                     on:click=move |_| show_task_selection.set(!show_task_selection.get())
                 >
                     {move || if show_task_selection.get() { "Hide Tasks" } else { "Select Task" }}
@@ -48,7 +48,7 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                         </span>
                                     </div>
                                     <button
-                                        class="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        class="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
                                         on:click={
                                             let task_controller_clear = task_controller_display.clone();
                                             move |_| {
@@ -102,7 +102,7 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                                             <div class="p-3">
                                                                 // Task option
                                                                 <button
-                                                                    class="w-full text-left flex items-center space-x-2 p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                                                    class="w-full text-left flex items-center space-x-3 p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                                                                     on:click={
                                                                         let task_for_select = task_clone.clone();
                                                                         let controller_for_task = task_controller_item.clone();
@@ -116,20 +116,20 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                                                         class="w-3 h-3 rounded-full flex-shrink-0"
                                                                         style:background-color=task.color.clone()
                                                                     ></div>
-                                                                    <div class="flex-grow">
-                                                                        <div class="text-sm font-medium text-gray-800 dark:text-white">
+                                                                    <div class="flex-grow min-w-0">
+                                                                        <div class="text-sm font-medium text-gray-800 dark:text-white truncate">
                                                                             {task.name.clone()}
                                                                         </div>
                                                                         {task.description.as_ref().map(|desc| {
                                                                             view! {
-                                                                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                                                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
                                                                                     {desc.clone()}
                                                                                 </div>
                                                                             }
                                                                         })}
                                                                     </div>
-                                                                    <div class="text-xs text-gray-500 dark:text-gray-400">
-                                                                        {task.actual_pomodoros} "🍅"
+                                                                    <div class="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900 px-2 py-1 rounded flex-shrink-0">
+                                                                        {task.actual_pomodoros} " min"
                                                                     </div>
                                                                 </button>
 
@@ -138,7 +138,7 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                                                     let subtasks = task_controller_item.get_subtasks_for_task(&task_id);
                                                                     if !subtasks.is_empty() {
                                                                         view! {
-                                                                            <div class="ml-4 mt-2 space-y-1">
+                                                                            <div class="ml-6 mt-2 space-y-1">
                                                                                 {subtasks.into_iter().map(|subtask| {
                                                                                     let subtask_clone = subtask.clone();
                                                                                     let controller_for_subtask = task_controller_item.clone();
@@ -146,7 +146,7 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                                                                     
                                                                                     view! {
                                                                                         <button
-                                                                                            class="w-full text-left flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                                                                            class="w-full text-left flex items-center space-x-3 p-2 rounded text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                                                                                             on:click=move |_| {
                                                                                                 // Select both task and subtask
                                                                                                 controller_for_subtask.select_task(Some(task_clone_for_subtask.clone()));
@@ -154,14 +154,14 @@ pub fn TaskSelector(task_controller: TaskController) -> impl IntoView {
                                                                                                 show_task_selection.set(false);
                                                                                             }
                                                                                         >
-                                                                                            <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0"></div>
-                                                                                            <div class="flex-grow">
-                                                                                                <span class="text-gray-700 dark:text-gray-300">
+                                                                                            <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0 ml-1"></div>
+                                                                                            <div class="flex-grow min-w-0">
+                                                                                                <span class="text-gray-700 dark:text-gray-300 truncate block">
                                                                                                     {subtask.name}
                                                                                                 </span>
                                                                                             </div>
-                                                                                            <div class="text-xs text-gray-500 dark:text-gray-400">
-                                                                                                {subtask.actual_pomodoros} "🍅"
+                                                                                            <div class="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900 px-2 py-1 rounded flex-shrink-0">
+                                                                                                {subtask.actual_pomodoros} " min"
                                                                                             </div>
                                                                                         </button>
                                                                                     }

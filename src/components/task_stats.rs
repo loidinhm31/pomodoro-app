@@ -1,5 +1,3 @@
-// Fixed src/components/task_stats.rs
-
 use crate::task::TaskController;
 use crate::utils::format_duration_hours_minutes;
 use leptos::prelude::*;
@@ -29,7 +27,7 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
                                     let total_tasks = task_stats.len() as u32;
                                     let completed_tasks = task_stats.iter().filter(|ts| ts.task.completed).count() as u32;
                                     let total_focus_time: u32 = task_stats.iter().map(|ts| ts.total_focus_time).sum();
-                                    let total_pomodoros: u32 = task_stats.iter().map(|ts| ts.total_pomodoros).sum();
+                                    let total_minutes: u32 = task_stats.iter().map(|ts| ts.total_pomodoros).sum();
                                     
                                     view! {
                                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -53,10 +51,10 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
 
                                             <div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
                                                 <div class="text-2xl font-bold text-red-600 dark:text-red-400">
-                                                    {total_pomodoros}
+                                                    {total_minutes}
                                                 </div>
                                                 <div class="text-sm text-gray-600 dark:text-gray-400">
-                                                    "Total Pomodoros"
+                                                    "Total Minutes"
                                                 </div>
                                             </div>
 
@@ -96,7 +94,7 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
                                                             </h5>
                                                             {task.description.as_ref().map(|desc| {
                                                                 view! {
-                                                                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                                                                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                                                                         {desc.clone()}
                                                                     </p>
                                                                 }
@@ -134,7 +132,7 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
                                                             {task_stat.total_pomodoros}
                                                         </div>
                                                         <div class="text-xs text-gray-600 dark:text-gray-400">
-                                                            "Pomodoros"
+                                                            "Minutes Tracked"
                                                         </div>
                                                     </div>
 
@@ -168,30 +166,30 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
 
                                                 // Estimation Accuracy
                                                 {task_stat.estimated_vs_actual.map(|(estimated, actual)| {
-                                                    let accuracy_color = if actual <= estimated {
+                                                    let avg_minutes_per_session = if estimated > 0 {
+                                                        actual as f64 / estimated as f64
+                                                    } else {
+                                                        0.0
+                                                    };
+                                                    
+                                                    let accuracy_color = if avg_minutes_per_session <= 30.0 { // Within reasonable time per session
                                                         "text-green-600 dark:text-green-400"
                                                     } else {
                                                         "text-red-600 dark:text-red-400"
-                                                    };
-                                                    
-                                                    let percentage = if estimated > 0 {
-                                                        (actual as f64 / estimated as f64) * 100.0
-                                                    } else {
-                                                        0.0
                                                     };
                                                     
                                                     view! {
                                                         <div class="bg-gray-50 dark:bg-gray-700 rounded p-3">
                                                             <div class="flex justify-between items-center">
                                                                 <span class="text-sm text-gray-600 dark:text-gray-400">
-                                                                    "Estimation Accuracy:"
+                                                                    "Time vs Estimation:"
                                                                 </span>
                                                                 <div class="text-right">
                                                                     <span class=format!("text-sm font-medium {}", accuracy_color)>
-                                                                        {actual} "/" {estimated} " pomodoros"
+                                                                        {actual} " min / " {estimated} " sessions"
                                                                     </span>
                                                                     <div class=format!("text-xs {}", accuracy_color)>
-                                                                        {format!("{:.0}% of estimate", percentage)}
+                                                                        {format!("{:.1} min per session", avg_minutes_per_session)}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -210,15 +208,15 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
                                                                 {subtasks.into_iter().map(|subtask| {
                                                                     view! {
                                                                         <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded text-sm">
-                                                                            <div class="flex items-center space-x-2">
-                                                                                <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500"></div>
-                                                                                <span class=format!("{}",
+                                                                            <div class="flex items-center space-x-2 flex-grow min-w-0">
+                                                                                <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0"></div>
+                                                                                <span class=format!("truncate {}",
                                                                                     if subtask.completed { "line-through opacity-60" } else { "" })>
                                                                                     {subtask.name}
                                                                                 </span>
                                                                                 {if subtask.completed {
                                                                                     view! {
-                                                                                        <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-1 rounded">
+                                                                                        <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-1 rounded flex-shrink-0">
                                                                                             "✓"
                                                                                         </span>
                                                                                     }.into_any()
@@ -227,18 +225,22 @@ pub fn TaskStats(task_controller: TaskController) -> impl IntoView {
                                                                                 }}
                                                                             </div>
                                                                             
-                                                                            <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-                                                                                <span>{subtask.actual_pomodoros} "🍅"</span>
+                                                                            <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                                                                <span class="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                                                                                    {subtask.actual_pomodoros} " min 🍅"
+                                                                                </span>
                                                                                 <span>{format_duration_hours_minutes(subtask.total_focus_time)}</span>
                                                                                 {subtask.estimated_pomodoros.map(|est| {
-                                                                                    let est_accuracy = if est > 0 {
-                                                                                        format!(" ({:.0}%)", (subtask.actual_pomodoros as f64 / est as f64) * 100.0)
+                                                                                    let avg_minutes_per_session = if est > 0 {
+                                                                                        format!(" ({:.1}m/session)", subtask.actual_pomodoros as f64 / est as f64)
                                                                                     } else {
                                                                                         String::new()
                                                                                     };
                                                                                     
                                                                                     view! {
-                                                                                        <span>"Est: " {est} "🍅" {est_accuracy}</span>
+                                                                                        <span class="text-gray-500 dark:text-gray-400">
+                                                                                            "Est: " {est} " sessions 🍅" {avg_minutes_per_session}
+                                                                                        </span>
                                                                                     }
                                                                                 })}
                                                                             </div>

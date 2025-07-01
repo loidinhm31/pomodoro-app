@@ -668,7 +668,6 @@ async fn get_next_subtask_order(task_id: &str) -> u32 {
     subtasks.iter().map(|st| st.order_index).max().unwrap_or(0) + 1
 }
 
-// Update work session completion to track task time
 pub async fn complete_work_session_with_task(
     session: NewSession,
     focus_time_seconds: u32,
@@ -678,31 +677,32 @@ pub async fn complete_work_session_with_task(
 
     // Update task/subtask time tracking if this was a work session
     if session.session_type == "Work" && session.completed && focus_time_seconds > 0 {
+        // Convert seconds to minutes (rounded up to nearest minute)
+        let focus_time_minutes = (focus_time_seconds + 59) / 60; // Round up to nearest minute
+
         if let Some(subtask_id) = session.subtask_id {
             // Update subtask with actual time
             let mut subtasks = get_all_subtasks().await?;
             if let Some(subtask) = subtasks.iter_mut().find(|st| st.id == subtask_id) {
                 subtask.total_focus_time += focus_time_seconds;
-                // Convert actual time to "pomodoro equivalents" (25 min each) for estimation comparison
-                let pomodoro_equivalent = (focus_time_seconds + 1499) / 1500; // Round up to nearest 25-min block
-                subtask.actual_pomodoros += pomodoro_equivalent;
+                // Track actual minutes spent instead of pomodoro equivalents
+                subtask.actual_pomodoros += focus_time_minutes;
                 update_subtask_in_db(subtask.clone()).await?;
 
-                console_log!("Updated subtask {} with {} seconds ({} pomodoro-equivalents)", 
-                           subtask_id, focus_time_seconds, pomodoro_equivalent);
+                console_log!("Updated subtask {} with {} seconds ({} minutes)", 
+                           subtask_id, focus_time_seconds, focus_time_minutes);
             }
         } else if let Some(task_id) = session.task_id {
             // Update task directly with actual time
             let mut tasks = get_all_tasks().await?;
             if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
                 task.total_focus_time += focus_time_seconds;
-                // Convert actual time to "pomodoro equivalents" (25 min each) for estimation comparison
-                let pomodoro_equivalent = (focus_time_seconds + 1499) / 1500; // Round up to nearest 25-min block
-                task.actual_pomodoros += pomodoro_equivalent;
+                // Track actual minutes spent instead of pomodoro equivalents
+                task.actual_pomodoros += focus_time_minutes;
                 update_task_in_db(task.clone()).await?;
 
-                console_log!("Updated task {} with {} seconds ({} pomodoro-equivalents)", 
-                           task_id, focus_time_seconds, pomodoro_equivalent);
+                console_log!("Updated task {} with {} seconds ({} minutes)", 
+                           task_id, focus_time_seconds, focus_time_minutes);
             }
         }
     }

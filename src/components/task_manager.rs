@@ -20,10 +20,10 @@ pub fn TaskManager(task_controller: TaskController) -> impl IntoView {
         <div class="task-manager">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-800 dark:text-white">Task Management</h3>
-                
+
                 <div class="flex space-x-2">
                     <button
-                        class="text-sm px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        class="text-sm px-3 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
                         on:click={
                             let task_controller = task_controller.clone();
                             move |_| task_controller.show_completed.set(!task_controller.show_completed.get())
@@ -34,7 +34,7 @@ pub fn TaskManager(task_controller: TaskController) -> impl IntoView {
                             move || if task_controller.show_completed.get() { "Hide Completed" } else { "Show Completed" }
                         }
                     </button>
-                    
+
                     <button
                         class="text-sm px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
                         on:click=move |_| show_new_task_form.set(!show_new_task_form.get())
@@ -52,28 +52,28 @@ pub fn TaskManager(task_controller: TaskController) -> impl IntoView {
                         view! {
                             <div class="mb-6 p-4 border rounded-lg bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
                                 <h4 class="text-md font-medium text-gray-800 dark:text-white mb-3">Create New Task</h4>
-                                
+
                                 <div class="space-y-3">
                                     <div>
                                         <input
                                             type="text"
                                             placeholder="Task name"
-                                            class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                                            class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                                             prop:value=move || new_task_name.get()
                                             on:input=move |ev| new_task_name.set(event_target_value(&ev))
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <textarea
                                             placeholder="Description (optional)"
-                                            class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                                            class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                                             rows="2"
                                             prop:value=move || new_task_description.get()
                                             on:input=move |ev| new_task_description.set(event_target_value(&ev))
                                         ></textarea>
                                     </div>
-                                    
+
                                     <div class="flex space-x-3">
                                         <div class="flex-1">
                                             <select
@@ -89,21 +89,21 @@ pub fn TaskManager(task_controller: TaskController) -> impl IntoView {
                                                 }).collect::<Vec<_>>()}
                                             </select>
                                         </div>
-                                        
+
                                         <div class="flex-1">
                                             <input
                                                 type="number"
                                                 min="1"
-                                                placeholder="Est. pomodoros"
-                                                class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                                                placeholder="Est. sessions"
+                                                class="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                                                 prop:value=move || new_task_estimated_pomodoros.get()
                                                 on:input=move |ev| new_task_estimated_pomodoros.set(event_target_value(&ev))
                                             />
                                         </div>
                                     </div>
-                                    
+
                                     <button
-                                        class="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
+                                        class="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         on:click={
                                             let task_controller_create = task_controller_form.clone();
                                             move |_| {
@@ -186,7 +186,7 @@ pub fn TaskManager(task_controller: TaskController) -> impl IntoView {
 
             // Tasks List
             <div class="space-y-4">
-                <TaskList 
+                <TaskList
                     task_controller=task_controller
                     show_new_subtask_form=show_new_subtask_form
                     new_subtask_name=new_subtask_name
@@ -214,13 +214,14 @@ pub fn TaskList(
                 <div class="text-center py-8 text-gray-500 dark:text-gray-400">
                     "No tasks found. Create your first task to get started!"
                 </div>
-            }.into_any()
+            }
+            .into_any()
         } else {
             view! {
                 <div class="space-y-4">
                     {progress_summary.into_iter().map(|(task, completion_percentage, completed_subtasks, total_subtasks)| {
                         view! {
-                            <TaskItem 
+                            <TaskItem
                                 task=task
                                 completion_percentage=completion_percentage
                                 completed_subtasks=completed_subtasks
@@ -262,14 +263,14 @@ pub fn TaskItem(
                         class="w-4 h-4 rounded-full flex-shrink-0 mt-0.5"
                         style:background-color=task.color.clone()
                     ></div>
-                    
+
                     <div class="flex-grow">
                         <div class="flex items-center space-x-2">
-                            <h4 class=format!("font-medium text-gray-800 dark:text-white {}", 
+                            <h4 class=format!("font-medium text-gray-800 dark:text-white {}",
                                 if task.completed { "line-through opacity-60" } else { "" })>
                                 {task.name.clone()}
                             </h4>
-                            
+
                             {if task.completed {
                                 view! {
                                     <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded">
@@ -280,36 +281,42 @@ pub fn TaskItem(
                                 view! { <div></div> }.into_any()
                             }}
                         </div>
-                        
+
                         {task.description.as_ref().map(|desc| {
                             view! {
                                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    {desc.clone()}
+                                    Description: {desc.clone()}
                                 </p>
                             }
                         })}
-                        
-                        // Progress and Stats
+
+                        // Progress and Stats - FIXED VERSION
                         <div class="mt-2 space-y-2">
-                            <div class="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
-                                <span>{task.actual_pomodoros} " 🍅"</span>
-                                <span>{format_duration_hours_minutes(task.total_focus_time)}</span>
+                            <div class="flex items-center space-x-4 text-sm">
+                                <span class="text-blue-600 dark:text-blue-400 font-medium">
+                                    {task.actual_pomodoros} " minutes tracked 🍅"
+                                </span>
+                                <span class="text-gray-600 dark:text-gray-400">
+                                    "Total: " {format_duration_hours_minutes(task.total_focus_time)}
+                                </span>
                                 {if total_subtasks > 0 {
                                     view! {
-                                        <span>{completed_subtasks} "/" {total_subtasks} " subtasks"</span>
+                                        <span class="text-gray-600 dark:text-gray-400">
+                                            "Subtasks: " {completed_subtasks} "/" {total_subtasks}
+                                        </span>
                                     }.into_any()
                                 } else {
                                     view! { <div></div> }.into_any()
                                 }}
                                 {task.estimated_pomodoros.map(|est| {
                                     view! {
-                                        <span class="text-xs">
-                                            "Est: " {est} " 🍅"
+                                        <span class="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                                            "Est: " {est} " sessions 🍅"
                                         </span>
                                     }
                                 })}
                             </div>
-                            
+
                             // Progress Bar
                             {if total_subtasks > 0 {
                                 view! {
@@ -321,7 +328,7 @@ pub fn TaskItem(
                                                 style:width=format!("{}%", completion_percentage)
                                             ></div>
                                         </div>
-                                        <span class="text-xs text-gray-500 dark:text-gray-400">
+                                        <span class="text-xs text-gray-500 dark:text-gray-400 min-w-[3rem] text-right">
                                             {format!("{:.0}%", completion_percentage)}
                                         </span>
                                     </div>
@@ -332,17 +339,17 @@ pub fn TaskItem(
                         </div>
                     </div>
                 </div>
-                
+
                 // Task Actions
-                <TaskActions 
+                <TaskActions
                     task=task.clone()
                     task_controller=task_controller.clone()
                     show_new_subtask_form=show_new_subtask_form
                 />
             </div>
-            
+
             // New Subtask Form
-            <SubtaskForm 
+            <SubtaskForm
                 task_id=task_id.clone()
                 task_controller=task_controller.clone()
                 show_new_subtask_form=show_new_subtask_form
@@ -350,9 +357,9 @@ pub fn TaskItem(
                 new_subtask_description=new_subtask_description
                 new_subtask_estimated_pomodoros=new_subtask_estimated_pomodoros
             />
-            
+
             // Subtasks List
-            <SubtaskList 
+            <SubtaskList
                 task_id=task_id
                 task_controller=task_controller
             />
@@ -379,7 +386,7 @@ pub fn TaskActions(
             >
                 "+ Sub"
             </button>
-            
+
             <button
                 class={format!("text-xs px-2 py-1 rounded transition-colors {}",
                     if task.completed {
@@ -396,7 +403,7 @@ pub fn TaskActions(
             >
                 {if task.completed { "Reopen" } else { "Done" }}
             </button>
-            
+
             <button
                 class="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
                 on:click={
@@ -435,33 +442,33 @@ pub fn SubtaskForm(
                         <input
                             type="text"
                             placeholder="Subtask name"
-                            class="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                            class="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                             prop:value=move || new_subtask_name.get()
                             on:input=move |ev| new_subtask_name.set(event_target_value(&ev))
                         />
-                        
+
                         <div class="flex space-x-2">
                             <input
                                 type="text"
-                                placeholder="Description"
-                                class="flex-1 px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                                placeholder="Description (optional)"
+                                class="flex-1 px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                                 prop:value=move || new_subtask_description.get()
                                 on:input=move |ev| new_subtask_description.set(event_target_value(&ev))
                             />
-                            
+
                             <input
                                 type="number"
                                 min="1"
-                                placeholder="Est. 🍅"
-                                class="w-20 px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                                placeholder="Est. sessions"
+                                class="w-24 px-2 py-1 text-sm border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 placeholder-gray-500 dark:placeholder-gray-400"
                                 prop:value=move || new_subtask_estimated_pomodoros.get()
                                 on:input=move |ev| new_subtask_estimated_pomodoros.set(event_target_value(&ev))
                             />
                         </div>
-                        
+
                         <div class="flex space-x-2">
                             <button
-                                class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors"
+                                class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 on:click={
                                     let task_id_create = task_id.clone();
                                     let task_controller_create = task_controller.clone();
@@ -518,10 +525,7 @@ pub fn SubtaskForm(
 }
 
 #[component]
-pub fn SubtaskList(
-    task_id: String,
-    task_controller: TaskController,
-) -> impl IntoView {
+pub fn SubtaskList(task_id: String, task_controller: TaskController) -> impl IntoView {
     move || {
         let subtasks = task_controller.get_subtasks_for_task(&task_id);
         if !subtasks.is_empty() {
@@ -529,12 +533,12 @@ pub fn SubtaskList(
                 <div class="mt-3 space-y-2">
                     {subtasks.into_iter().map(|subtask| {
                         let subtask_id = subtask.id.clone();
-                        
+
                         view! {
                             <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
                                 <div class="flex items-center space-x-2 flex-grow">
-                                    <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500"></div>
-                                    <span class=format!("text-sm {}",
+                                    <div class="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0"></div>
+                                    <span class=format!("text-sm text-gray-800 dark:text-gray-200 {}",
                                         if subtask.completed { "line-through opacity-60" } else { "" })>
                                         {subtask.name}
                                     </span>
@@ -548,17 +552,21 @@ pub fn SubtaskList(
                                         view! { <div></div> }.into_any()
                                     }}
                                 </div>
-                                
-                                <div class="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
-                                    <span>{subtask.actual_pomodoros} "🍅"</span>
+
+                                <div class="flex items-center space-x-3 text-xs text-gray-600 dark:text-gray-400">
+                                    <span class="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                                        {subtask.actual_pomodoros} " min 🍅"
+                                    </span>
                                     {subtask.estimated_pomodoros.map(|est| {
                                         view! {
-                                            <span>"/" {est}</span>
+                                            <span class="text-gray-500 dark:text-gray-400">
+                                                "/ " {est} " sessions 🍅"
+                                            </span>
                                         }
                                     })}
-                                    
+
                                     <button
-                                        class={format!("px-2 py-1 rounded text-xs {}",
+                                        class={format!("px-2 py-1 rounded text-xs transition-colors {}",
                                             if subtask.completed {
                                                 "bg-yellow-500 hover:bg-yellow-600 text-white"
                                             } else {
@@ -570,12 +578,13 @@ pub fn SubtaskList(
                                             let subtask_controller_toggle = task_controller.clone();
                                             move |_| subtask_controller_toggle.toggle_subtask_completion(subtask_id_toggle.clone())
                                         }
+                                        title={if subtask.completed { "Mark as incomplete" } else { "Mark as complete" }}
                                     >
                                         {if subtask.completed { "↶" } else { "✓" }}
                                     </button>
-                                    
+
                                     <button
-                                        class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs"
+                                        class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-xs transition-colors"
                                         on:click={
                                             let subtask_id_delete = subtask_id.clone();
                                             let subtask_controller_delete = task_controller.clone();
@@ -588,6 +597,7 @@ pub fn SubtaskList(
                                                 }
                                             }
                                         }
+                                        title="Delete subtask"
                                     >
                                         "×"
                                     </button>
