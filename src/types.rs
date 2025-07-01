@@ -285,8 +285,8 @@ pub async fn save_session_to_db(session: NewSession) -> Result<String, String> {
         completed: session.completed,
         created_at: now.into(),
         video_path: session.video_path,
-        task_id: None,
-        subtask_id: None,
+        task_id: session.task_id,       
+        subtask_id: session.subtask_id,
     };
 
     // Get existing sessions
