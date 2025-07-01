@@ -1,8 +1,9 @@
 use crate::components::CameraController;
 use crate::console_log;
+use crate::task::TaskController;
 use crate::types::{
-    generate_session_id, get_session_stats_from_db, save_session_to_db, NewSession, SessionStats,
-    SessionType, TimerSettings, TimerState,
+    complete_work_session_with_task, generate_session_id, get_session_stats_from_db,
+    save_session_to_db, NewSession, SessionStats, SessionType, TimerSettings, TimerState,
 };
 use crate::utils::{clearInterval, get_current_iso_time, setInterval};
 use leptos::prelude::*;
@@ -146,27 +147,56 @@ impl TimerController {
             current_cycle_sessions
         };
 
-        let next_session = self.session_type.get().next_session(hypothetical_work_sessions, &settings);
+        let next_session = self
+            .session_type
+            .get()
+            .next_session(hypothetical_work_sessions, &settings);
 
         let description = match next_session {
             SessionType::Work => "Back to work!".to_string(),
             SessionType::ShortBreak => {
-                format!("Short break after {} work session(s)", hypothetical_work_sessions)
-            },
+                format!(
+                    "Short break after {} work session(s)",
+                    hypothetical_work_sessions
+                )
+            }
             SessionType::LongBreak => {
-                format!("Long break after {} work sessions!", hypothetical_work_sessions)
-            },
+                format!(
+                    "Long break after {} work sessions!",
+                    hypothetical_work_sessions
+                )
+            }
         };
 
         (next_session, description)
     }
-    
+
     fn should_auto_start_session(&self, session_type: SessionType) -> bool {
         let settings = self.timer_settings.get();
         match session_type {
             SessionType::Work => settings.auto_start_work,
             SessionType::ShortBreak | SessionType::LongBreak => settings.auto_start_breaks,
         }
+    }
+
+    fn save_session_with_task_tracking(&self, session: NewSession, focus_time_seconds: u32) {
+        let controller = self.clone();
+        spawn_local(async move {
+            controller.loading.set(true);
+
+            // Use the new task-aware session saving function
+            match complete_work_session_with_task(session, focus_time_seconds).await {
+                Ok(_) => {
+                    console_log!("Session with task tracking saved successfully!");
+                    controller.load_session_stats();
+                }
+                Err(e) => {
+                    console_log!("Error saving session with task tracking: {}", e);
+                }
+            }
+
+            controller.loading.set(false);
+        });
     }
 
     fn save_session(&self, session: NewSession) {
@@ -219,7 +249,8 @@ impl TimerController {
         let args = serde_wasm_bindgen::to_value(&serde_json::json!({
             "sessionType": session_type_str,
             "durationMinutes": duration_minutes
-        })).unwrap_or(JsValue::NULL);
+        }))
+        .unwrap_or(JsValue::NULL);
 
         let result = invoke("session_completed_notification", args).await;
 
@@ -246,25 +277,33 @@ impl TimerController {
         // Try to use Web Notification API as fallback
         if let Some(window) = web_sys::window() {
             // Try browser notification first
-            if let Ok(notification_constructor) = js_sys::Reflect::get(&window, &"Notification".into()) {
+            if let Ok(notification_constructor) =
+                js_sys::Reflect::get(&window, &"Notification".into())
+            {
                 // Check permission
-                let permission = js_sys::Reflect::get(&notification_constructor, &"permission".into())
-                    .unwrap_or_else(|_| "denied".into());
+                let permission =
+                    js_sys::Reflect::get(&notification_constructor, &"permission".into())
+                        .unwrap_or_else(|_| "denied".into());
 
                 let mut permission_str = permission.as_string().unwrap_or("denied".to_string());
 
                 // Request permission if needed
                 if permission_str == "default" {
-                    if let Ok(request_permission_fn) = js_sys::Reflect::get(&notification_constructor, &"requestPermission".into()) {
+                    if let Ok(request_permission_fn) =
+                        js_sys::Reflect::get(&notification_constructor, &"requestPermission".into())
+                    {
                         if let Ok(function) = request_permission_fn.dyn_into::<js_sys::Function>() {
                             let permission_promise = function.call0(&notification_constructor);
                             if let Ok(promise_value) = permission_promise {
                                 if let Ok(promise) = promise_value.dyn_into::<js_sys::Promise>() {
-                                    let permission_result = wasm_bindgen_futures::JsFuture::from(promise)
-                                        .await
-                                        .unwrap_or_else(|_| "denied".into());
+                                    let permission_result =
+                                        wasm_bindgen_futures::JsFuture::from(promise)
+                                            .await
+                                            .unwrap_or_else(|_| "denied".into());
 
-                                    permission_str = permission_result.as_string().unwrap_or("denied".to_string());
+                                    permission_str = permission_result
+                                        .as_string()
+                                        .unwrap_or("denied".to_string());
                                 }
                             }
                         }
@@ -282,16 +321,15 @@ impl TimerController {
 
                     let options = js_sys::Object::new();
                     js_sys::Reflect::set(&options, &"body".into(), &body.into()).unwrap();
-                    js_sys::Reflect::set(&options, &"icon".into(), &"/public/tauri.svg".into()).unwrap();
+                    js_sys::Reflect::set(&options, &"icon".into(), &"/public/tauri.svg".into())
+                        .unwrap();
 
                     let args = js_sys::Array::new();
                     args.push(&title.into());
                     args.push(&options);
 
-                    let _notification_instance = js_sys::Reflect::construct(
-                        &notification_constructor.into(),
-                        &args,
-                    );
+                    let _notification_instance =
+                        js_sys::Reflect::construct(&notification_constructor.into(), &args);
 
                     console_log!("Web notification sent as fallback");
                     return; // Successfully sent notification, no need for audio fallback
@@ -303,18 +341,21 @@ impl TimerController {
         self.play_audio_beep().await;
     }
 
-    // Separate method for audio beep
     async fn play_audio_beep(&self) {
         if let Some(window) = web_sys::window() {
             // Try to create audio context
-            if let Ok(audio_context_constructor) = js_sys::Reflect::get(&window, &"AudioContext".into()) {
-                if let Ok(audio_context) = js_sys::Reflect::construct(&audio_context_constructor.into(), &js_sys::Array::new()) {
+            if let Ok(audio_context_constructor) =
+                js_sys::Reflect::get(&window, &"AudioContext".into())
+            {
+                if let Ok(audio_context) = js_sys::Reflect::construct(
+                    &audio_context_constructor.into(),
+                    &js_sys::Array::new(),
+                ) {
                     // Try to get a proper AudioContext
                     if let Ok(ctx) = audio_context.dyn_into::<web_sys::AudioContext>() {
-                        if let (Ok(oscillator), Ok(gain_node)) = (
-                            ctx.create_oscillator(),
-                            ctx.create_gain()
-                        ) {
+                        if let (Ok(oscillator), Ok(gain_node)) =
+                            (ctx.create_oscillator(), ctx.create_gain())
+                        {
                             oscillator.frequency().set_value(800.0);
                             oscillator.set_type(web_sys::OscillatorType::Sine);
 
@@ -340,8 +381,12 @@ impl TimerController {
         console_log!("Could not play audio beep - audio context unavailable");
     }
 
-    pub fn complete_session_with_camera(&self, camera_controller: Option<&CameraController>) {
-        console_log!("Timer completed with camera integration!");
+    pub fn complete_session_with_camera_and_tasks(
+        &self,
+        camera_controller: Option<&CameraController>,
+        task_controller: Option<&TaskController>,
+    ) {
+        console_log!("Timer completed with camera and task integration!");
 
         // Stop the current timer
         if let Some(id) = self.interval_id.get() {
@@ -368,10 +413,19 @@ impl TimerController {
             .get()
             .unwrap_or_else(|| generate_session_id());
 
+        // Get task information if available
+        let (task_id, subtask_id) = if let Some(task_ctrl) = task_controller {
+            task_ctrl.get_current_selection()
+        } else {
+            (None, None)
+        };
+
         // Send notification FIRST (before any async operations)
         let controller_for_notification = self.clone();
         spawn_local(async move {
-            controller_for_notification.send_session_notification(session_type).await;
+            controller_for_notification
+                .send_session_notification(session_type)
+                .await;
         });
 
         // Update work session count FIRST (if it's a work session)
@@ -387,7 +441,11 @@ impl TimerController {
         // NOW determine next session type using the UPDATED count
         let next_session = session_type.next_session(updated_work_sessions, &settings);
 
-        console_log!("Current work sessions: {}, Next session: {:?}", updated_work_sessions, next_session);
+        console_log!(
+            "Current work sessions: {}, Next session: {:?}",
+            updated_work_sessions,
+            next_session
+        );
 
         // Handle camera recording completion
         if let Some(camera) = camera_controller {
@@ -412,7 +470,7 @@ impl TimerController {
                     None
                 };
 
-                // Save session with video path
+                // Create session with task information
                 let new_session = NewSession {
                     session_type: session_type.to_string(),
                     planned_duration,
@@ -421,12 +479,18 @@ impl TimerController {
                     end_time,
                     completed: true,
                     video_path,
+                    task_id,
+                    subtask_id,
                 };
 
-                controller.save_session(new_session);
+                // Save session with task tracking for work sessions
+                if session_type == SessionType::Work {
+                    controller.save_session_with_task_tracking(new_session, actual_duration);
+                } else {
+                    controller.save_session(new_session);
+                }
             });
         } else {
-            // Save session without video
             let new_session = NewSession {
                 session_type: session_type.to_string(),
                 planned_duration,
@@ -435,9 +499,21 @@ impl TimerController {
                 end_time,
                 completed: true,
                 video_path: None,
+                task_id,
+                subtask_id,
             };
 
-            self.save_session(new_session);
+            // Save session with task tracking for work sessions
+            if session_type == SessionType::Work {
+                self.save_session_with_task_tracking(new_session, actual_duration);
+            } else {
+                self.save_session(new_session);
+            }
+        }
+
+        // Reload task stats if task controller is available
+        if let Some(task_ctrl) = task_controller {
+            task_ctrl.load_task_stats();
         }
 
         // Switch to next session type
@@ -460,7 +536,7 @@ impl TimerController {
             });
         }
     }
-    
+
     pub fn start_timer_with_camera(&self, camera_controller: Option<&CameraController>) {
         // Start the timer first
         self.start_timer();

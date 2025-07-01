@@ -6,6 +6,9 @@ pub mod session_stats;
 pub mod timer_controls;
 pub mod timer_display;
 pub mod timer_settings;
+pub mod task_selector;
+pub mod task_stats;
+mod task_manager;
 
 pub use camera_recorder::{CameraController, CameraRecorder};
 pub use camera_settings::CameraSettings;
@@ -15,3 +18,6 @@ pub use session_stats::SessionStats;
 pub use timer_controls::TimerControls;
 pub use timer_display::TimerDisplay;
 pub use timer_settings::TimerSettings;
+pub use task_selector::TaskSelector;
+pub use task_manager::TaskManager;
+pub use task_stats::TaskStats;

@@ -4,7 +4,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::console_log;
 use crate::timer::TimerController;
-use crate::types::{delete_session_from_db, get_sessions_from_db, Session};
+use crate::types::{delete_session_from_db, get_sessions_from_db, get_task_path_by_ids, Session};
 use crate::utils::{format_duration_hours_minutes, format_iso_date};
 
 #[wasm_bindgen]
@@ -13,9 +13,15 @@ extern "C" {
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 }
 
+#[derive(Clone, Debug)]
+struct SessionWithTask {
+    session: Session,
+    task_info: Option<String>,
+}
+
 #[component]
 pub fn SessionHistory(controller: TimerController) -> impl IntoView {
-    let sessions = RwSignal::new(Vec::<Session>::new());
+    let sessions_with_tasks = RwSignal::new(Vec::<SessionWithTask>::new());
     let loading = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let filter_type = RwSignal::new(None::<String>);
@@ -65,15 +71,15 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
         });
     };
 
-    // Load sessions on component mount
+    // Load sessions with task information
     let load_sessions = {
-        let sessions = sessions.clone();
+        let sessions_with_tasks = sessions_with_tasks.clone();
         let loading = loading.clone();
         let error = error.clone();
         let filter_type = filter_type.clone();
 
         move || {
-            let sessions = sessions.clone();
+            let sessions_with_tasks = sessions_with_tasks.clone();
             let loading = loading.clone();
             let error = error.clone();
             let filter_type = filter_type.clone();
@@ -82,12 +88,50 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                 loading.set(true);
                 error.set(None);
 
-                let query_limit = Some(20);
+                let query_limit = Some(50);
                 let query_session_type = filter_type.get();
 
                 match get_sessions_from_db(query_limit, query_session_type).await {
                     Ok(loaded_sessions) => {
-                        sessions.set(loaded_sessions);
+                        console_log!("Loaded {} sessions", loaded_sessions.len());
+
+                        // Resolve task information for each session
+                        let mut sessions_with_task_info = Vec::new();
+
+                        for session in loaded_sessions {
+                            let task_info = if session.session_type == "Work" {
+                                // Try to get task information
+                                match get_task_path_by_ids(
+                                    session.task_id.as_deref(),
+                                    session.subtask_id.as_deref(),
+                                )
+                                .await
+                                {
+                                    Ok(info) => {
+                                        console_log!(
+                                            "Resolved task info for session {}: {:?}",
+                                            session.id,
+                                            info
+                                        );
+                                        info
+                                    }
+                                    Err(e) => {
+                                        console_log!(
+                                            "Error resolving task info for session {}: {}",
+                                            session.id,
+                                            e
+                                        );
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                            sessions_with_task_info.push(SessionWithTask { session, task_info });
+                        }
+
+                        sessions_with_tasks.set(sessions_with_task_info);
                     }
                     Err(e) => {
                         console_log!("Error loading sessions: {}", e);
@@ -118,21 +162,21 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
     });
 
     let delete_session = {
-        let sessions = sessions.clone();
+        let sessions_with_tasks = sessions_with_tasks.clone();
         let controller = controller.clone();
         move |session_id: String| {
-            let sessions = sessions.clone();
+            let sessions_with_tasks = sessions_with_tasks.clone();
             let controller = controller.clone();
             spawn_local(async move {
                 match delete_session_from_db(session_id.clone()).await {
                     Ok(_) => {
                         // Remove from local list
-                        let current_sessions = sessions.get();
-                        let updated_sessions: Vec<Session> = current_sessions
+                        let current_sessions = sessions_with_tasks.get();
+                        let updated_sessions: Vec<SessionWithTask> = current_sessions
                             .into_iter()
-                            .filter(|s| s.id != session_id)
+                            .filter(|s| s.session.id != session_id)
                             .collect();
-                        sessions.set(updated_sessions);
+                        sessions_with_tasks.set(updated_sessions);
 
                         // Reload stats
                         controller.load_session_stats();
@@ -198,9 +242,9 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
             }}
 
             // Sessions list
-            <div class="max-h-64 overflow-y-auto">
+            <div class="max-h-96 overflow-y-auto">
                 {move || {
-                    let session_list = sessions.get();
+                    let session_list = sessions_with_tasks.get();
                     if session_list.is_empty() && !loading.get() {
                         view! {
                             <div class="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -209,14 +253,17 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                         }.into_any()
                     } else {
                         view! {
-                            <div class="space-y-2">
-                                {session_list.into_iter().map(|session| {
+                            <div class="space-y-3">
+                                {session_list.into_iter().map(|session_with_task| {
+                                    let session = session_with_task.session;
+                                    let task_info = session_with_task.task_info;
                                     let session_id = session.id.clone();
                                     let delete_session = delete_session.clone();
                                     let open_video = open_video_file.clone();
                                     let has_video = session.video_path.is_some();
                                     let video_path = session.video_path.clone();
                                     let is_break_session = session.session_type == "ShortBreak" || session.session_type == "LongBreak";
+                                    let is_work_session = session.session_type == "Work";
 
                                     let session_color = match session.session_type.as_str() {
                                         "Work" => "border-l-red-500 bg-red-50 dark:bg-red-900/20",
@@ -226,10 +273,10 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                     };
 
                                     view! {
-                                        <div class=format!("border-l-4 p-3 rounded-r-lg {}", session_color)>
+                                        <div class=format!("border-l-4 p-4 rounded-r-lg {}", session_color)>
                                             <div class="flex justify-between items-start">
                                                 <div class="flex-grow">
-                                                    <div class="flex items-center space-x-2 mb-1">
+                                                    <div class="flex items-center space-x-2 mb-2">
                                                         <span class="font-medium text-gray-800 dark:text-white">
                                                             {session.session_type.clone()}
                                                         </span>
@@ -237,18 +284,37 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                                             {format_duration_hours_minutes(session.actual_duration)}
                                                         </span>
 
-                                                        // Video indicator for break sessions
-                                                        {if is_break_session {
-                                                            if has_video {
+                                                        // Task indicator for work sessions
+                                                        {if is_work_session {
+                                                            if let Some(task_name) = task_info.clone() {
                                                                 view! {
-                                                                    <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-1 rounded" title="Video recorded">
-                                                                        "📹"
+                                                                    <span class="text-xs bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded" title="Task tracked">
+                                                                        "🎯 " {task_name}
                                                                     </span>
                                                                 }.into_any()
                                                             } else {
                                                                 view! {
-                                                                    <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1 rounded" title="No video recording">
-                                                                        "📹❌"
+                                                                    <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded" title="No task tracked">
+                                                                        "⚪ No task"
+                                                                    </span>
+                                                                }.into_any()
+                                                            }
+                                                        } else {
+                                                            view! { <div></div> }.into_any()
+                                                        }}
+
+                                                        // Video indicator for break sessions
+                                                        {if is_break_session {
+                                                            if has_video {
+                                                                view! {
+                                                                    <span class="text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded" title="Video recorded">
+                                                                        "📹 Video"
+                                                                    </span>
+                                                                }.into_any()
+                                                            } else {
+                                                                view! {
+                                                                    <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded" title="No video recording">
+                                                                        "📹 No Video"
                                                                     </span>
                                                                 }.into_any()
                                                             }
@@ -260,6 +326,38 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                                     <div class="text-xs text-gray-500 dark:text-gray-400">
                                                         {format_iso_date(&session.created_at)}
                                                     </div>
+
+                                                    // Task details for work sessions
+                                                    {if is_work_session && task_info.is_some() {
+                                                        view! {
+                                                            <div class="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                                                                <div class="text-xs font-medium text-blue-800 dark:text-blue-200 mb-1">
+                                                                    "Task Progress:"
+                                                                </div>
+                                                                <div class="text-xs text-blue-700 dark:text-blue-300">
+                                                                    {task_info.unwrap_or_default()}
+                                                                </div>
+                                                                <div class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                                                    "Focus time: " {format_duration_hours_minutes(session.actual_duration)}
+                                                                    " • Time tracking: ✓"
+                                                                </div>
+                                                            </div>
+                                                        }.into_any()
+                                                    } else if is_work_session {
+                                                        view! {
+                                                            <div class="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 rounded border border-orange-200 dark:border-orange-800">
+                                                                <div class="text-xs text-orange-700 dark:text-orange-300">
+                                                                    "⚠️ No task was selected for this work session"
+                                                                </div>
+                                                                <div class="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                                                    "Focus time: " {format_duration_hours_minutes(session.actual_duration)}
+                                                                    " • Time tracking: ❌"
+                                                                </div>
+                                                            </div>
+                                                        }.into_any()
+                                                    } else {
+                                                        view! { <div></div> }.into_any()
+                                                    }}
 
                                                     // Video file info and controls
                                                     {if let Some(video_path_display) = video_path.clone() {
@@ -319,21 +417,42 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                 }}
             </div>
 
-            // Legend for video indicators
+            // Enhanced Legend for indicators
             <div class="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded text-sm">
                 <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-3">"Legend:"</h4>
-                <div class="space-y-2 text-gray-600 dark:text-gray-400">
-                    <div class="flex items-center space-x-3">
-                        <span class="bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded text-xs">"📹 Video"</span>
-                        <span>"Break session with video recording available"</span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    // Work Session Indicators
+                    <div>
+                        <h5 class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">"Work Sessions:"</h5>
+                        <div class="space-y-2 text-gray-600 dark:text-gray-400">
+                            <div class="flex items-center space-x-3">
+                                <span class="bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">"🎯 Task Name"</span>
+                                <span>"Work session with task time tracking"</span>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded text-xs">"⚪ No Task"</span>
+                                <span>"Work session without task time tracking"</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex items-center space-x-3">
-                        <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded text-xs">"📹 No Video"</span>
-                        <span>"Break session without video recording"</span>
+
+                    // Break Session Indicators
+                    <div>
+                        <h5 class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">"Break Sessions:"</h5>
+                        <div class="space-y-2 text-gray-600 dark:text-gray-400">
+                            <div class="flex items-center space-x-3">
+                                <span class="bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 px-2 py-1 rounded text-xs">"📹 Video"</span>
+                                <span>"Break session with video recording"</span>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded text-xs">"📹 No Video"</span>
+                                <span>"Break session without video recording"</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-3 pl-2 border-l-2 border-gray-300 dark:border-gray-600">
-                        <strong>"Note:"</strong> " Video indicators only appear for break sessions (Short Break and Long Break). Work sessions do not show video indicators."
-                    </div>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-4 pl-2 border-l-2 border-gray-300 dark:border-gray-600">
+                    <strong>"Note:"</strong> " Time tracking shows actual minutes spent on tasks. Video recording is available for break sessions based on your camera settings."
                 </div>
             </div>
         </div>
