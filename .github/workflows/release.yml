@@ -1,0 +1,125 @@
+# .github/workflows/release.yml
+name: "Build and Release"
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on version tags like v1.0.0
+  workflow_dispatch: # Allows manual triggering
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest" # for Arm based macs (M1 and above).
+            args: "--target aarch64-apple-darwin"
+            target: "aarch64-apple-darwin"
+          - platform: "macos-latest" # for Intel based macs.
+            args: "--target x86_64-apple-darwin"
+            target: "x86_64-apple-darwin"
+          - platform: "ubuntu-22.04"
+            args: ""
+            target: "x86_64-unknown-linux-gnu"
+          - platform: "windows-latest"
+            args: ""
+            target: "x86_64-pc-windows-msvc"
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up the linux/windows builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.4.0
+        with:
+          version: "latest"
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Sync node version and setup cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install frontend dependencies
+        # If you don't have any frontend dependencies, you can remove this step
+        # run: npm install # or yarn install / pnpm install / bun install
+        run: echo "No frontend dependencies to install"
+
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }} # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: "Pomodoro Timer v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # Optional: Create a combined release with all platform assets
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Pomodoro Timer ${{ github.ref_name }}"
+          body: |
+            ## 🍅 Pomodoro Timer Release ${{ github.ref_name }}
+            
+            ### Features
+            - ⏰ Customizable Pomodoro timer with work and break sessions
+            - 📹 Camera recording during break sessions
+            - 📊 Session tracking and statistics
+            - 🎯 Task management with time tracking
+            - 💾 Local data storage
+            - 🎨 Dark/light mode support
+            
+            ### Downloads
+            - **Windows**: Download the `.msi` installer
+            - **macOS**: Download the `.dmg` file (Universal binary available)
+            - **Linux**: Download the `.AppImage` or `.deb` package
+            
+            ### Installation
+            1. Download the appropriate file for your operating system
+            2. Run the installer
+            3. Launch the Pomodoro Timer application
+            
+            ### System Requirements
+            - **Windows**: Windows 10 or later
+            - **macOS**: macOS 10.15 or later
+            - **Linux**: Ubuntu 18.04+ or equivalent
+          draft: false
+          prerelease: false
+          generate_release_notes: true
