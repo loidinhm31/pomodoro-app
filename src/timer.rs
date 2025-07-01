@@ -1,10 +1,11 @@
 use crate::components::CameraController;
 use crate::console_log;
 use crate::types::{
-    generate_session_id, get_session_stats_from_db, save_session_to_db, NewSession, SessionStats,
+    complete_work_session_with_task, generate_session_id, get_session_stats_from_db, save_session_to_db, NewSession, SessionStats,
     SessionType, TimerSettings, TimerState,
 };
 use crate::utils::{clearInterval, get_current_iso_time, setInterval};
+use crate::task::TaskController;
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -160,7 +161,7 @@ impl TimerController {
 
         (next_session, description)
     }
-    
+
     fn should_auto_start_session(&self, session_type: SessionType) -> bool {
         let settings = self.timer_settings.get();
         match session_type {
@@ -169,6 +170,28 @@ impl TimerController {
         }
     }
 
+    // Updated save_session method to handle task tracking
+    fn save_session_with_task_tracking(&self, session: NewSession, focus_time_seconds: u32) {
+        let controller = self.clone();
+        spawn_local(async move {
+            controller.loading.set(true);
+
+            // Use the new task-aware session saving function
+            match complete_work_session_with_task(session, focus_time_seconds).await {
+                Ok(_) => {
+                    console_log!("Session with task tracking saved successfully!");
+                    controller.load_session_stats();
+                }
+                Err(e) => {
+                    console_log!("Error saving session with task tracking: {}", e);
+                }
+            }
+
+            controller.loading.set(false);
+        });
+    }
+
+    // Legacy save_session method for non-work sessions
     fn save_session(&self, session: NewSession) {
         let controller = self.clone();
         spawn_local(async move {
@@ -340,8 +363,13 @@ impl TimerController {
         console_log!("Could not play audio beep - audio context unavailable");
     }
 
-    pub fn complete_session_with_camera(&self, camera_controller: Option<&CameraController>) {
-        console_log!("Timer completed with camera integration!");
+    // Updated complete_session method with task integration
+    pub fn complete_session_with_camera_and_tasks(
+        &self,
+        camera_controller: Option<&CameraController>,
+        task_controller: Option<&TaskController>
+    ) {
+        console_log!("Timer completed with camera and task integration!");
 
         // Stop the current timer
         if let Some(id) = self.interval_id.get() {
@@ -367,6 +395,13 @@ impl TimerController {
             .current_session_id
             .get()
             .unwrap_or_else(|| generate_session_id());
+
+        // Get task information if available
+        let (task_id, subtask_id) = if let Some(task_ctrl) = task_controller {
+            task_ctrl.get_current_selection()
+        } else {
+            (None, None)
+        };
 
         // Send notification FIRST (before any async operations)
         let controller_for_notification = self.clone();
@@ -412,7 +447,7 @@ impl TimerController {
                     None
                 };
 
-                // Save session with video path
+                // Create session with task information
                 let new_session = NewSession {
                     session_type: session_type.to_string(),
                     planned_duration,
@@ -421,12 +456,19 @@ impl TimerController {
                     end_time,
                     completed: true,
                     video_path,
+                    task_id,
+                    subtask_id,
                 };
 
-                controller.save_session(new_session);
+                // Save session with task tracking for work sessions
+                if session_type == SessionType::Work {
+                    controller.save_session_with_task_tracking(new_session, actual_duration);
+                } else {
+                    controller.save_session(new_session);
+                }
             });
         } else {
-            // Save session without video
+            // Save session without video but with task information
             let new_session = NewSession {
                 session_type: session_type.to_string(),
                 planned_duration,
@@ -435,9 +477,21 @@ impl TimerController {
                 end_time,
                 completed: true,
                 video_path: None,
+                task_id,
+                subtask_id,
             };
 
-            self.save_session(new_session);
+            // Save session with task tracking for work sessions
+            if session_type == SessionType::Work {
+                self.save_session_with_task_tracking(new_session, actual_duration);
+            } else {
+                self.save_session(new_session);
+            }
+        }
+
+        // Reload task stats if task controller is available
+        if let Some(task_ctrl) = task_controller {
+            task_ctrl.load_task_stats();
         }
 
         // Switch to next session type
@@ -460,7 +514,12 @@ impl TimerController {
             });
         }
     }
-    
+
+    // Keep the existing method for backward compatibility
+    pub fn complete_session_with_camera(&self, camera_controller: Option<&CameraController>) {
+        self.complete_session_with_camera_and_tasks(camera_controller, None);
+    }
+
     pub fn start_timer_with_camera(&self, camera_controller: Option<&CameraController>) {
         // Start the timer first
         self.start_timer();
