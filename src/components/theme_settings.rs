@@ -117,14 +117,14 @@ pub fn ThemeSettings(theme_controller: ThemeController) -> impl IntoView {
                     "Automatic Theme Switching"
                 </h5>
 
-                // Auto Dark Mode (now switches to Nordic)
+                // Auto Dark Mode
                 <div class="flex items-center justify-between">
                     <div>
                         <span class="text-sm font-medium text-gray-600 dark:text-gray-400">
                             "Auto Evening Mode"
                         </span>
                         <p class="text-xs text-gray-500 dark:text-gray-400">
-                            "Switch to Nordic theme from 6 PM to 6 AM"
+                            "Switch to Nordic Dark theme from 6 PM to 6 AM"
                         </p>
                     </div>
                     <input
@@ -141,14 +141,14 @@ pub fn ThemeSettings(theme_controller: ThemeController) -> impl IntoView {
                     />
                 </div>
 
-                // System Theme Sync (now switches to Nordic for dark preference)
+                // System Theme Sync
                 <div class="flex items-center justify-between">
                     <div>
                         <span class="text-sm font-medium text-gray-600 dark:text-gray-400">
                             "Follow System Theme"
                         </span>
                         <p class="text-xs text-gray-500 dark:text-gray-400">
-                            "Use Nordic theme when system prefers dark mode"
+                            "Use Nordic Dark theme when system prefers dark mode"
                         </p>
                     </div>
                     <input
@@ -225,7 +225,7 @@ pub fn ThemeSettings(theme_controller: ThemeController) -> impl IntoView {
                 </div>
             </div>
 
-            // Theme Information - Updated for 2-theme system
+            // Theme Information
             <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <h5 class="text-md font-medium text-blue-800 dark:text-blue-200 mb-2">
                     "About Themes"
@@ -235,19 +235,19 @@ pub fn ThemeSettings(theme_controller: ThemeController) -> impl IntoView {
                         <div>
                             <h6 class="font-semibold mb-1">"🎨 Classic Theme"</h6>
                             <p class="text-xs">
-                                "Traditional Pomodoro colors with bright, energizing tones. Perfect for daytime focus sessions."
+                                "Traditional Pomodoro colors with bright, energizing tones. Perfect for daytime focus sessions and high-energy work."
                             </p>
                         </div>
                         <div>
-                            <h6 class="font-semibold mb-1">"❄️ Nordic Theme"</h6>
+                            <h6 class="font-semibold mb-1">"🌙 Nordic Dark Theme"</h6>
                             <p class="text-xs">
-                                "Cool, calming Scandinavian palette ideal for evening work and extended sessions."
+                                "Dark Scandinavian-inspired design with cool blues and muted tones. Ideal for evening work, reducing eye strain, and creating a calm focus environment."
                             </p>
                         </div>
                     </div>
                     <div class="pt-2 border-t border-blue-200 dark:border-blue-700">
                         <p class="text-xs">
-                            "💡 Tip: Use automatic switching to have Classic during the day and Nordic in the evening for optimal eye comfort."
+                            "💡 Tip: Use automatic switching to have Classic during the day and Nordic Dark in the evening for optimal comfort and productivity throughout the day."
                         </p>
                     </div>
                 </div>

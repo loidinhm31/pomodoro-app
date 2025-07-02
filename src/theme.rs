@@ -20,14 +20,14 @@ impl ThemeType {
     pub fn display_name(&self) -> &'static str {
         match self {
             ThemeType::Classic => "Classic",
-            ThemeType::Nordic => "Nordic",
+            ThemeType::Nordic => "Nordic Dark",
         }
     }
 
     pub fn description(&self) -> &'static str {
         match self {
-            ThemeType::Classic => "Traditional Pomodoro colors",
-            ThemeType::Nordic => "Cool Scandinavian-inspired palette",
+            ThemeType::Classic => "Traditional Pomodoro colors with bright tones",
+            ThemeType::Nordic => "Dark Scandinavian-inspired palette with cool blues",
         }
     }
 
@@ -227,7 +227,7 @@ impl ThemeController {
                     if let Some(media_query_list) = media_query_result {
                         if media_query_list.matches() {
                             self.set_theme(ThemeType::Nordic);
-                            console_log!("System theme sync: switched to Nordic (dark mode detected)");
+                            console_log!("System theme sync: switched to Nordic Dark (dark mode detected)");
                         } else {
                             self.set_theme(ThemeType::Classic);
                             console_log!("System theme sync: switched to Classic (light mode detected)");
@@ -242,7 +242,7 @@ impl ThemeController {
         }
 
         // Fallback: switch to Nordic theme if media queries aren't supported
-        console_log!("System theme sync - fallback to Nordic theme");
+        console_log!("System theme sync - fallback to Nordic Dark theme");
         self.set_theme(ThemeType::Nordic);
     }
 
