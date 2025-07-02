@@ -1,13 +1,10 @@
-// Updated src/components/session_history.rs
-
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::console_log;
 use crate::timer::TimerController;
-use crate::task::TaskController;
-use crate::types::{delete_session_from_db, get_sessions_from_db, Session};
+use crate::types::{delete_session_from_db, get_sessions_from_db, get_task_path_by_ids, Session};
 use crate::utils::{format_duration_hours_minutes, format_iso_date};
 
 #[wasm_bindgen]
@@ -16,15 +13,18 @@ extern "C" {
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 }
 
+#[derive(Clone, Debug)]
+struct SessionWithTask {
+    session: Session,
+    task_info: Option<String>,
+}
+
 #[component]
 pub fn SessionHistory(controller: TimerController) -> impl IntoView {
-    let sessions = RwSignal::new(Vec::<Session>::new());
+    let sessions_with_tasks = RwSignal::new(Vec::<SessionWithTask>::new());
     let loading = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
     let filter_type = RwSignal::new(None::<String>);
-
-    // Create task controller to resolve task names
-    let task_controller = TaskController::new();
 
     // Function to open video file
     let open_video_file = move |video_path: String| {
@@ -34,7 +34,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
             let args = serde_wasm_bindgen::to_value(&serde_json::json!({
                 "path": video_path.clone()
             }))
-                .unwrap_or(JsValue::NULL);
+            .unwrap_or(JsValue::NULL);
 
             let result = invoke("open_video_file", args).await;
 
@@ -49,7 +49,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                     let reveal_args = serde_wasm_bindgen::to_value(&serde_json::json!({
                         "path": video_path
                     }))
-                        .unwrap_or(JsValue::NULL);
+                    .unwrap_or(JsValue::NULL);
 
                     let reveal_result = invoke("reveal_in_explorer", reveal_args).await;
                     match serde_wasm_bindgen::from_value::<Result<String, String>>(reveal_result) {
@@ -71,15 +71,15 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
         });
     };
 
-    // Load sessions on component mount
+    // Load sessions with task information
     let load_sessions = {
-        let sessions = sessions.clone();
+        let sessions_with_tasks = sessions_with_tasks.clone();
         let loading = loading.clone();
         let error = error.clone();
         let filter_type = filter_type.clone();
 
         move || {
-            let sessions = sessions.clone();
+            let sessions_with_tasks = sessions_with_tasks.clone();
             let loading = loading.clone();
             let error = error.clone();
             let filter_type = filter_type.clone();
@@ -88,12 +88,50 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                 loading.set(true);
                 error.set(None);
 
-                let query_limit = Some(50); // Increased to show more sessions
+                let query_limit = Some(50);
                 let query_session_type = filter_type.get();
 
                 match get_sessions_from_db(query_limit, query_session_type).await {
                     Ok(loaded_sessions) => {
-                        sessions.set(loaded_sessions);
+                        console_log!("Loaded {} sessions", loaded_sessions.len());
+
+                        // Resolve task information for each session
+                        let mut sessions_with_task_info = Vec::new();
+
+                        for session in loaded_sessions {
+                            let task_info = if session.session_type == "Work" {
+                                // Try to get task information
+                                match get_task_path_by_ids(
+                                    session.task_id.as_deref(),
+                                    session.subtask_id.as_deref(),
+                                )
+                                .await
+                                {
+                                    Ok(info) => {
+                                        console_log!(
+                                            "Resolved task info for session {}: {:?}",
+                                            session.id,
+                                            info
+                                        );
+                                        info
+                                    }
+                                    Err(e) => {
+                                        console_log!(
+                                            "Error resolving task info for session {}: {}",
+                                            session.id,
+                                            e
+                                        );
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                            sessions_with_task_info.push(SessionWithTask { session, task_info });
+                        }
+
+                        sessions_with_tasks.set(sessions_with_task_info);
                     }
                     Err(e) => {
                         console_log!("Error loading sessions: {}", e);
@@ -124,27 +162,24 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
     });
 
     let delete_session = {
-        let sessions = sessions.clone();
+        let sessions_with_tasks = sessions_with_tasks.clone();
         let controller = controller.clone();
-        let task_controller = task_controller.clone();
         move |session_id: String| {
-            let sessions = sessions.clone();
+            let sessions_with_tasks = sessions_with_tasks.clone();
             let controller = controller.clone();
-            let task_controller = task_controller.clone();
             spawn_local(async move {
                 match delete_session_from_db(session_id.clone()).await {
                     Ok(_) => {
                         // Remove from local list
-                        let current_sessions = sessions.get();
-                        let updated_sessions: Vec<Session> = current_sessions
+                        let current_sessions = sessions_with_tasks.get();
+                        let updated_sessions: Vec<SessionWithTask> = current_sessions
                             .into_iter()
-                            .filter(|s| s.id != session_id)
+                            .filter(|s| s.session.id != session_id)
                             .collect();
-                        sessions.set(updated_sessions);
+                        sessions_with_tasks.set(updated_sessions);
 
                         // Reload stats
                         controller.load_session_stats();
-                        task_controller.load_task_stats();
                         console_log!("Session deleted successfully!");
                     }
                     Err(e) => {
@@ -153,29 +188,6 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                 }
             });
         }
-    };
-
-    // Helper function to resolve task/subtask names
-    let get_task_info = move |session: &Session| -> Option<String> {
-        let tasks = task_controller.tasks.get();
-        let subtasks = task_controller.subtasks.get();
-
-        if let Some(subtask_id) = &session.subtask_id {
-            if let Some(subtask) = subtasks.iter().find(|st| st.id == *subtask_id) {
-                if let Some(task) = tasks.iter().find(|t| t.id == subtask.task_id) {
-                    return Some(format!("{} → {}", task.name, subtask.name));
-                } else {
-                    return Some(format!("Unknown Task → {}", subtask.name));
-                }
-            }
-        } else if let Some(task_id) = &session.task_id {
-            if let Some(task) = tasks.iter().find(|t| t.id == *task_id) {
-                return Some(task.name.clone());
-            } else {
-                return Some("Unknown Task".to_string());
-            }
-        }
-        None
     };
 
     view! {
@@ -232,7 +244,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
             // Sessions list
             <div class="max-h-96 overflow-y-auto">
                 {move || {
-                    let session_list = sessions.get();
+                    let session_list = sessions_with_tasks.get();
                     if session_list.is_empty() && !loading.get() {
                         view! {
                             <div class="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -242,7 +254,9 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                     } else {
                         view! {
                             <div class="space-y-3">
-                                {session_list.into_iter().map(|session| {
+                                {session_list.into_iter().map(|session_with_task| {
+                                    let session = session_with_task.session;
+                                    let task_info = session_with_task.task_info;
                                     let session_id = session.id.clone();
                                     let delete_session = delete_session.clone();
                                     let open_video = open_video_file.clone();
@@ -250,7 +264,6 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                     let video_path = session.video_path.clone();
                                     let is_break_session = session.session_type == "ShortBreak" || session.session_type == "LongBreak";
                                     let is_work_session = session.session_type == "Work";
-                                    let task_info = get_task_info(&session);
 
                                     let session_color = match session.session_type.as_str() {
                                         "Work" => "border-l-red-500 bg-red-50 dark:bg-red-900/20",
@@ -326,13 +339,20 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                                                                 </div>
                                                                 <div class="text-xs text-blue-600 dark:text-blue-400 mt-1">
                                                                     "Focus time: " {format_duration_hours_minutes(session.actual_duration)}
+                                                                    " • Time tracking: ✓"
                                                                 </div>
                                                             </div>
                                                         }.into_any()
                                                     } else if is_work_session {
                                                         view! {
-                                                            <div class="mt-2 text-xs text-gray-400 dark:text-gray-500 italic">
-                                                                "No task was selected for this work session"
+                                                            <div class="mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 rounded border border-orange-200 dark:border-orange-800">
+                                                                <div class="text-xs text-orange-700 dark:text-orange-300">
+                                                                    "⚠️ No task was selected for this work session"
+                                                                </div>
+                                                                <div class="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                                                    "Focus time: " {format_duration_hours_minutes(session.actual_duration)}
+                                                                    " • Time tracking: ❌"
+                                                                </div>
                                                             </div>
                                                         }.into_any()
                                                     } else {
@@ -407,15 +427,15 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                         <div class="space-y-2 text-gray-600 dark:text-gray-400">
                             <div class="flex items-center space-x-3">
                                 <span class="bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">"🎯 Task Name"</span>
-                                <span>"Work session with task tracking"</span>
+                                <span>"Work session with task time tracking"</span>
                             </div>
                             <div class="flex items-center space-x-3">
                                 <span class="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded text-xs">"⚪ No Task"</span>
-                                <span>"Work session without task tracking"</span>
+                                <span>"Work session without task time tracking"</span>
                             </div>
                         </div>
                     </div>
-                    
+
                     // Break Session Indicators
                     <div>
                         <h5 class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">"Break Sessions:"</h5>
@@ -432,7 +452,7 @@ pub fn SessionHistory(controller: TimerController) -> impl IntoView {
                     </div>
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-4 pl-2 border-l-2 border-gray-300 dark:border-gray-600">
-                    <strong>"Note:"</strong> " Task tracking is only available for work sessions. Video recording is available for break sessions based on your camera settings."
+                    <strong>"Note:"</strong> " Time tracking shows actual minutes spent on tasks. Video recording is available for break sessions based on your camera settings."
                 </div>
             </div>
         </div>

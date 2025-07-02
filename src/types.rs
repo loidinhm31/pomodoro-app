@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use web_sys::{window, Storage};
+use crate::console_log;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerState {
@@ -284,8 +285,8 @@ pub async fn save_session_to_db(session: NewSession) -> Result<String, String> {
         completed: session.completed,
         created_at: now.into(),
         video_path: session.video_path,
-        task_id: None,
-        subtask_id: None,
+        task_id: session.task_id,       
+        subtask_id: session.subtask_id,
     };
 
     // Get existing sessions
@@ -667,34 +668,77 @@ async fn get_next_subtask_order(task_id: &str) -> u32 {
     subtasks.iter().map(|st| st.order_index).max().unwrap_or(0) + 1
 }
 
-// Update work session completion to track task time
 pub async fn complete_work_session_with_task(
     session: NewSession,
     focus_time_seconds: u32,
 ) -> Result<String, String> {
-    // Save the session
+    // Save the session first
     let session_id = save_session_to_db(session.clone()).await?;
 
     // Update task/subtask time tracking if this was a work session
-    if session.session_type == "Work" && session.completed {
+    if session.session_type == "Work" && session.completed && focus_time_seconds > 0 {
+        // Convert seconds to minutes (rounded up to nearest minute)
+        let focus_time_minutes = (focus_time_seconds + 59) / 60; // Round up to nearest minute
+
         if let Some(subtask_id) = session.subtask_id {
-            // Update subtask
+            // Update subtask with actual time
             let mut subtasks = get_all_subtasks().await?;
             if let Some(subtask) = subtasks.iter_mut().find(|st| st.id == subtask_id) {
                 subtask.total_focus_time += focus_time_seconds;
-                subtask.actual_pomodoros += 1;
+                // Track actual minutes spent instead of pomodoro equivalents
+                subtask.actual_pomodoros += focus_time_minutes;
                 update_subtask_in_db(subtask.clone()).await?;
+
+                console_log!("Updated subtask {} with {} seconds ({} minutes)", 
+                           subtask_id, focus_time_seconds, focus_time_minutes);
             }
         } else if let Some(task_id) = session.task_id {
-            // Update task directly
+            // Update task directly with actual time
             let mut tasks = get_all_tasks().await?;
             if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
                 task.total_focus_time += focus_time_seconds;
-                task.actual_pomodoros += 1;
+                // Track actual minutes spent instead of pomodoro equivalents
+                task.actual_pomodoros += focus_time_minutes;
                 update_task_in_db(task.clone()).await?;
+
+                console_log!("Updated task {} with {} seconds ({} minutes)", 
+                           task_id, focus_time_seconds, focus_time_minutes);
             }
         }
     }
 
     Ok(session_id)
+}
+
+// Helper function to get task name by ID
+pub async fn get_task_name_by_id(task_id: &str) -> Result<Option<String>, String> {
+    let tasks = get_all_tasks().await?;
+    Ok(tasks.iter().find(|t| t.id == task_id).map(|t| t.name.clone()))
+}
+
+// Helper function to get subtask name by ID
+pub async fn get_subtask_name_by_id(subtask_id: &str) -> Result<Option<String>, String> {
+    let subtasks = get_all_subtasks().await?;
+    Ok(subtasks.iter().find(|st| st.id == subtask_id).map(|st| st.name.clone()))
+}
+
+// Helper function to get full task path (Task → Subtask)
+pub async fn get_task_path_by_ids(task_id: Option<&str>, subtask_id: Option<&str>) -> Result<Option<String>, String> {
+    if let Some(st_id) = subtask_id {
+        let subtasks = get_all_subtasks().await?;
+        if let Some(subtask) = subtasks.iter().find(|st| st.id == st_id) {
+            let tasks = get_all_tasks().await?;
+            if let Some(task) = tasks.iter().find(|t| t.id == subtask.task_id) {
+                return Ok(Some(format!("{} → {}", task.name, subtask.name)));
+            } else {
+                return Ok(Some(format!("Unknown Task → {}", subtask.name)));
+            }
+        }
+    } else if let Some(t_id) = task_id {
+        let tasks = get_all_tasks().await?;
+        if let Some(task) = tasks.iter().find(|t| t.id == t_id) {
+            return Ok(Some(task.name.clone()));
+        }
+    }
+    Ok(None)
 }
