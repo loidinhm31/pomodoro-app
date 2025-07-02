@@ -6,6 +6,7 @@ mod components;
 mod task;
 mod theme;
 mod keyboard_shortcuts;
+mod cleanup_scheduler;
 
 use app::*;
 use leptos::prelude::*;

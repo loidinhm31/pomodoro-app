@@ -41,7 +41,7 @@ web-sys = { version = "0.3", features = [
     "Element",
     "HtmlElement",
     "CssStyleDeclaration",
-    "MediaQueryList",  # Added for theme system sync
+    "MediaQueryList",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

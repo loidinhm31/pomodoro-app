@@ -1,11 +1,8 @@
-// src-tauri/src/lib.rs
+use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tauri::command]
 async fn get_videos_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -190,7 +187,6 @@ async fn reveal_in_explorer(path: String) -> Result<String, String> {
     }
 }
 
-// New notification commands
 #[tauri::command]
 async fn bring_window_to_front(app: tauri::AppHandle) -> Result<String, String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -382,12 +378,199 @@ async fn session_completed_notification(
     Ok("Session completion notification sent".to_string())
 }
 
+
+#[tauri::command]
+async fn cleanup_old_videos(app: tauri::AppHandle, days_old: Option<u32>) -> Result<String, String> {
+    let days_to_keep = days_old.unwrap_or(3); // Default to 3 days
+    let videos_dir = get_videos_dir(app).await?;
+    let videos_path = PathBuf::from(&videos_dir);
+
+    if !videos_path.exists() {
+        return Ok("Videos directory doesn't exist yet".to_string());
+    }
+
+    let mut deleted_count = 0;
+    let mut total_size_freed = 0u64;
+    let mut errors = Vec::new();
+
+    // Calculate cutoff timestamp (days_to_keep days ago in milliseconds)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get current time: {}", e))?
+        .as_millis() as u64;
+
+    let cutoff_timestamp = now - (days_to_keep as u64 * 24 * 60 * 60 * 1000);
+
+    // Read directory entries
+    let entries = fs::read_dir(&videos_path)
+        .map_err(|e| format!("Failed to read videos directory: {}", e))?;
+
+    for entry in entries {
+        match entry {
+            Ok(entry) => {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                        // Parse timestamp from filename pattern: session_<id>_<timestamp>.webm
+                        if let Some(timestamp) = extract_timestamp_from_filename(filename) {
+                            if timestamp < cutoff_timestamp {
+                                // File is older than cutoff, delete it
+                                match fs::metadata(&path) {
+                                    Ok(metadata) => {
+                                        let file_size = metadata.len();
+                                        match fs::remove_file(&path) {
+                                            Ok(_) => {
+                                                deleted_count += 1;
+                                                total_size_freed += file_size;
+                                                println!("Deleted old video: {}", filename);
+                                            }
+                                            Err(e) => {
+                                                errors.push(format!("Failed to delete {}: {}", filename, e));
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        errors.push(format!("Failed to get metadata for {}: {}", filename, e));
+                                    }
+                                }
+                            }
+                        } else {
+                            // Skip files that don't match our naming pattern
+                            println!("Skipping file with unrecognized pattern: {}", filename);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Failed to read directory entry: {}", e));
+            }
+        }
+    }
+
+    let size_mb = total_size_freed as f64 / (1024.0 * 1024.0);
+    let mut result = format!(
+        "Cleanup completed: {} files deleted, {:.2} MB freed",
+        deleted_count, size_mb
+    );
+
+    if !errors.is_empty() {
+        result.push_str(&format!(" (with {} errors)", errors.len()));
+        for error in &errors {
+            eprintln!("Cleanup error: {}", error);
+        }
+    }
+
+    Ok(result)
+}
+
+// Helper function to extract timestamp from filename
+fn extract_timestamp_from_filename(filename: &str) -> Option<u64> {
+    // Expected pattern: session_<session_id>_<timestamp>.webm
+    if let Some(stem) = filename.strip_suffix(".webm") {
+        if let Some(last_underscore) = stem.rfind('_') {
+            let timestamp_str = &stem[last_underscore + 1..];
+            return timestamp_str.parse::<u64>().ok();
+        }
+    }
+    None
+}
+
+#[tauri::command]
+async fn get_video_storage_info(app: tauri::AppHandle) -> Result<VideoStorageInfo, String> {
+    let videos_dir = get_videos_dir(app).await?;
+    let videos_path = PathBuf::from(&videos_dir);
+
+    if !videos_path.exists() {
+        return Ok(VideoStorageInfo {
+            total_files: 0,
+            total_size_mb: 0.0,
+            oldest_file_age_days: None,
+            videos_dir: videos_dir,
+        });
+    }
+
+    let mut total_files = 0;
+    let mut total_size = 0u64;
+    let mut oldest_timestamp: Option<u64> = None;
+
+    let entries = fs::read_dir(&videos_path)
+        .map_err(|e| format!("Failed to read videos directory: {}", e))?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get current time: {}", e))?
+        .as_millis() as u64;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    total_files += 1;
+                    total_size += metadata.len();
+
+                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                        if let Some(timestamp) = extract_timestamp_from_filename(filename) {
+                            match oldest_timestamp {
+                                None => oldest_timestamp = Some(timestamp),
+                                Some(current_oldest) => {
+                                    if timestamp < current_oldest {
+                                        oldest_timestamp = Some(timestamp);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let oldest_file_age_days = oldest_timestamp.map(|ts| {
+        let age_ms = now.saturating_sub(ts);
+        (age_ms as f64 / (24.0 * 60.0 * 60.0 * 1000.0)) as u32
+    });
+
+    Ok(VideoStorageInfo {
+        total_files,
+        total_size_mb: total_size as f64 / (1024.0 * 1024.0),
+        oldest_file_age_days,
+        videos_dir,
+    })
+}
+
+#[derive(serde::Serialize)]
+struct VideoStorageInfo {
+    total_files: u32,
+    total_size_mb: f64,
+    oldest_file_age_days: Option<u32>,
+    videos_dir: String,
+}
+
+#[tauri::command]
+async fn initialize_app_cleanup(app: tauri::AppHandle) -> Result<String, String> {
+    // Run cleanup on startup (keep last 3 days by default)
+    let cleanup_result = cleanup_old_videos(app, Some(3)).await?;
+    println!("Startup cleanup: {}", cleanup_result);
+    Ok(cleanup_result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            // Run initial cleanup on app startup
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match initialize_app_cleanup(app_handle).await {
+                    Ok(result) => println!("App startup cleanup: {}", result),
+                    Err(e) => eprintln!("Startup cleanup failed: {}", e),
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_videos_dir,
             save_video_file,
             list_video_files,
@@ -396,7 +579,10 @@ pub fn run() {
             bring_window_to_front,
             play_notification_sound,
             show_system_notification,
-            session_completed_notification
+            session_completed_notification,
+            cleanup_old_videos,
+            get_video_storage_info,
+            initialize_app_cleanup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,7 @@ use crate::components::{
     SessionStats, TimerControls, TimerDisplay, TimerSettings, TaskSelector, TaskManager, TaskStats,
     ThemeSettings,
 };
+use crate::cleanup_scheduler::CleanupScheduler;
 use crate::console_log;
 use crate::keyboard_shortcuts::{KeyboardShortcuts, KeyboardShortcutsHelp};
 use crate::theme::ThemeController;
@@ -34,6 +35,9 @@ pub fn App() -> impl IntoView {
     let camera_controller = CameraController::new();
     let task_controller = TaskController::new();
     let theme_controller = ThemeController::new();
+
+    // Initialize cleanup scheduler (cronjob-like functionality)
+    let _cleanup_scheduler = CleanupScheduler::new();
 
     // Initialize keyboard shortcuts
     let _keyboard_shortcuts = KeyboardShortcuts::new(
@@ -368,7 +372,7 @@ pub fn App() -> impl IntoView {
                                             )}
                                             on:click=move |_| active_settings_tab.set(SettingsTab::Camera)
                                         >
-                                            "📹 Camera"
+                                            "📹 Camera & Cleanup"
                                         </button>
                                         <button
                                             class={move || format!(
