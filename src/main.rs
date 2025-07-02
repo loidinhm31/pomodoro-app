@@ -4,6 +4,8 @@ mod utils;
 mod timer;
 mod components;
 mod task;
+mod theme;
+mod keyboard_shortcuts;
 
 use app::*;
 use leptos::prelude::*;

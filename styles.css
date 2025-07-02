@@ -3,7 +3,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom styles and overrides */
+/* CSS Custom Properties for Dynamic Theming */
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -15,6 +15,116 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  /* Default theme colors (Classic) */
+  --work-color: #EF4444;
+  --short-break-color: #22C55E;
+  --long-break-color: #3B82F6;
+}
+
+/* Classic Theme */
+.theme-classic {
+  --work-color: #EF4444;
+  --short-break-color: #22C55E;
+  --long-break-color: #3B82F6;
+}
+
+/* Nordic Theme */
+.theme-nordic {
+  --work-color: #5E81AC;
+  --short-break-color: #88C0D0;
+  --long-break-color: #81A1C1;
+
+  /* Nordic color palette backgrounds and styling */
+  background: linear-gradient(135deg, #2E3440 0%, #3B4252 50%, #434C5E 100%);
+
+  /* Override default Tailwind colors for Nordic aesthetic */
+  --nordic-polar-night-0: #2E3440;
+  --nordic-polar-night-1: #3B4252;
+  --nordic-polar-night-2: #434C5E;
+  --nordic-polar-night-3: #4C566A;
+
+  --nordic-snow-storm-0: #D8DEE9;
+  --nordic-snow-storm-1: #E5E9F0;
+  --nordic-snow-storm-2: #ECEFF4;
+
+  --nordic-frost-0: #8FBCBB;
+  --nordic-frost-1: #88C0D0;
+  --nordic-frost-2: #81A1C1;
+  --nordic-frost-3: #5E81AC;
+}
+
+.theme-nordic .bg-white {
+  background: rgba(216, 222, 233, 0.95) !important; /* Nordic Snow Storm */
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--nordic-frost-0);
+}
+
+.theme-nordic .dark .bg-gray-800 {
+  background: rgba(59, 66, 82, 0.95) !important; /* Nordic Polar Night */
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--nordic-polar-night-3);
+}
+
+.theme-nordic .bg-gray-50 {
+  background: var(--nordic-snow-storm-1) !important;
+}
+
+.theme-nordic .dark .bg-gray-700 {
+  background: var(--nordic-polar-night-2) !important;
+}
+
+.theme-nordic .bg-gray-100 {
+  background: var(--nordic-snow-storm-0) !important;
+}
+
+.theme-nordic .dark .bg-gray-900 {
+  background: var(--nordic-polar-night-0) !important;
+}
+
+.theme-nordic .text-gray-800 {
+  color: var(--nordic-polar-night-0) !important;
+}
+
+.theme-nordic .dark .text-white {
+  color: var(--nordic-snow-storm-2) !important;
+}
+
+.theme-nordic .text-gray-600 {
+  color: var(--nordic-polar-night-2) !important;
+}
+
+.theme-nordic .dark .text-gray-300 {
+  color: var(--nordic-snow-storm-1) !important;
+}
+
+.theme-nordic .border-gray-200 {
+  border-color: var(--nordic-frost-0) !important;
+}
+
+.theme-nordic .dark .border-gray-600 {
+  border-color: var(--nordic-polar-night-3) !important;
+}
+
+/* Nordic button styles */
+.theme-nordic button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-nordic button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(94, 129, 172, 0.15);
+}
+
+/* Nordic specific accents */
+.theme-nordic .timer-card {
+  box-shadow: 0 8px 32px rgba(46, 52, 64, 0.1);
+  border: 1px solid var(--nordic-frost-0);
+}
+
+.theme-nordic .dark .timer-card {
+  box-shadow: 0 8px 32px rgba(46, 52, 64, 0.3);
+  border: 1px solid var(--nordic-polar-night-3);
 }
 
 /* Custom timer animations */
@@ -34,6 +144,19 @@
 /* Progress bar animations */
 .progress-bar {
   transition: width 1s ease-in-out;
+}
+
+/* Dynamic progress bar colors using CSS variables */
+.progress-work {
+  background-color: var(--work-color);
+}
+
+.progress-short-break {
+  background-color: var(--short-break-color);
+}
+
+.progress-long-break {
+  background-color: var(--long-break-color);
 }
 
 /* Button hover effects */
@@ -59,40 +182,49 @@
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Session type badges */
+/* Session type badges with dynamic colors */
 .session-badge {
   @apply inline-block px-4 py-2 rounded-full text-white font-semibold shadow-lg;
 }
 
 .session-work {
-  @apply bg-red-500;
+  background-color: var(--work-color);
   box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
 }
 
 .session-short-break {
-  @apply bg-green-500;
+  background-color: var(--short-break-color);
   box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
 }
 
 .session-long-break {
-  @apply bg-blue-500;
+  background-color: var(--long-break-color);
   box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
-/* Card styling */
+/* Card styling with theme awareness */
 .timer-card {
   @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
-/* Dark mode transitions */
+/* Enhanced dark mode transitions */
 * {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 /* Focus states for accessibility */
-button:focus, input:focus {
+button:focus, input:focus, select:focus {
   @apply outline-none ring-2 ring-blue-500 ring-opacity-50;
+}
+
+/* Nordic theme focus states */
+.theme-nordic button:focus,
+.theme-nordic input:focus,
+.theme-nordic select:focus {
+  @apply outline-none ring-2 ring-opacity-50;
+  ring-color: var(--nordic-frost-2);
 }
 
 /* Disabled state styling */
@@ -105,7 +237,7 @@ button:disabled:hover {
   box-shadow: none !important;
 }
 
-/* Custom scrollbar for future use */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
 }
@@ -114,15 +246,35 @@ button:disabled:hover {
   @apply bg-gray-100 dark:bg-gray-800;
 }
 
+.theme-nordic ::-webkit-scrollbar-track {
+  background: var(--nordic-snow-storm-0);
+}
+
+.theme-nordic.dark ::-webkit-scrollbar-track {
+  background: var(--nordic-polar-night-1);
+}
+
 ::-webkit-scrollbar-thumb {
   @apply bg-gray-400 dark:bg-gray-600 rounded;
+}
+
+.theme-nordic ::-webkit-scrollbar-thumb {
+  background: var(--nordic-frost-1);
+}
+
+.theme-nordic.dark ::-webkit-scrollbar-thumb {
+  background: var(--nordic-polar-night-3);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-500 dark:bg-gray-500;
 }
 
-/* Loading animation for future use */
+.theme-nordic ::-webkit-scrollbar-thumb:hover {
+  background: var(--nordic-frost-2);
+}
+
+/* Loading animation */
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -136,6 +288,72 @@ button:disabled:hover {
   animation: spin 1s linear infinite;
 }
 
+/* Custom range slider styling */
+.slider {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-track {
+  @apply bg-gray-200 dark:bg-gray-600 rounded-lg;
+  height: 8px;
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  @apply bg-blue-500 rounded-full;
+  height: 20px;
+  width: 20px;
+  margin-top: -6px;
+}
+
+.theme-nordic .slider::-webkit-slider-thumb {
+  background: var(--nordic-frost-2);
+}
+
+.slider::-moz-range-track {
+  @apply bg-gray-200 dark:bg-gray-600 rounded-lg;
+  height: 8px;
+}
+
+.slider::-moz-range-thumb {
+  @apply bg-blue-500 rounded-full border-0;
+  height: 20px;
+  width: 20px;
+}
+
+.theme-nordic .slider::-moz-range-thumb {
+  background: var(--nordic-frost-2);
+}
+
+/* Theme transition animations */
+.theme-transition {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Ambient sound visualizer */
+@keyframes sound-wave {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.5);
+  }
+}
+
+.sound-wave {
+  animation: sound-wave 1s ease-in-out infinite alternate;
+}
+
+.sound-wave:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.sound-wave:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
 /* Responsive text sizing */
 @media (max-width: 640px) {
   .timer-display {
@@ -144,6 +362,11 @@ button:disabled:hover {
 
   .timer-card {
     @apply p-6;
+  }
+
+  /* Stack theme preview colors vertically on mobile */
+  .theme-preview-mobile {
+    @apply flex-col space-y-2 space-x-0;
   }
 }
 
@@ -155,4 +378,67 @@ button:disabled:hover {
   .timer-card {
     @apply p-4;
   }
+}
+
+/* Glass morphism effect for certain themes */
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.dark .glass-morphism {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-nordic .glass-morphism {
+  background: rgba(216, 222, 233, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(143, 188, 187, 0.3);
+}
+
+.theme-nordic.dark .glass-morphism {
+  background: rgba(59, 66, 82, 0.25);
+  border: 1px solid rgba(76, 86, 106, 0.3);
+}
+
+/* Color preview circles with border for better visibility */
+.color-preview {
+  @apply w-6 h-6 rounded-full border-2 border-gray-300 dark:border-gray-600;
+  transition: transform 0.2s ease;
+}
+
+.theme-nordic .color-preview {
+  border-color: var(--nordic-frost-0);
+}
+
+.theme-nordic.dark .color-preview {
+  border-color: var(--nordic-polar-night-3);
+}
+
+.color-preview:hover {
+  transform: scale(1.1);
+}
+
+.theme-button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.theme-nordic .theme-button:hover {
+  box-shadow: 0 8px 25px rgba(94, 129, 172, 0.15);
+}
+
+.theme-button.selected {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.25);
+}
+
+.theme-nordic .theme-button.selected {
+  box-shadow: 0 8px 25px rgba(129, 161, 193, 0.25);
 }
