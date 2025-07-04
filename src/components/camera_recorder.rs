@@ -9,7 +9,7 @@ use web_sys::{
 };
 
 use crate::console_log;
-use crate::types::{CameraSettings, CameraState, SessionType, TimerState};
+pub(crate) use crate::types::{CameraSettings, CameraState, SessionType, TimerState, PermissionState};
 
 #[wasm_bindgen]
 extern "C" {
@@ -30,6 +30,7 @@ pub struct CameraController {
     pub camera_settings: RwSignal<CameraSettings>,
     pub current_video_path: RwSignal<Option<String>>,
     pub is_recording: RwSignal<bool>,
+    pub permission_state: RwSignal<PermissionState>, // Add permission state tracking
 }
 
 impl CameraController {
@@ -39,6 +40,7 @@ impl CameraController {
             camera_settings: RwSignal::new(CameraSettings::default()),
             current_video_path: RwSignal::new(None),
             is_recording: RwSignal::new(false),
+            permission_state: RwSignal::new(PermissionState::Unknown),
         };
 
         // Load saved settings
@@ -76,12 +78,71 @@ impl CameraController {
         console_log!("Using default camera settings");
     }
 
+    pub async fn check_camera_permissions(&self) -> PermissionState {
+        if let Some(window) = web_sys::window() {
+            let navigator = window.navigator();
+
+            // Try to use the Permissions API via JavaScript reflection
+            if let Ok(permissions) = js_sys::Reflect::get(&navigator, &"permissions".into()) {
+                // Create permission descriptor for camera
+                let descriptor = js_sys::Object::new();
+                js_sys::Reflect::set(&descriptor, &"name".into(), &"camera".into()).unwrap();
+
+                // Call permissions.query(descriptor)
+                if let Ok(query_fn) = js_sys::Reflect::get(&permissions, &"query".into()) {
+                    if let Ok(query_function) = query_fn.dyn_into::<js_sys::Function>() {
+                        let args = js_sys::Array::new();
+                        args.push(&descriptor);
+
+                        if let Ok(promise_result) = query_function.apply(&permissions, &args) {
+                            if let Ok(promise) = promise_result.dyn_into::<js_sys::Promise>() {
+                                if let Ok(permission_status) = wasm_bindgen_futures::JsFuture::from(promise).await {
+                                    // Get the state property
+                                    if let Ok(state_value) = js_sys::Reflect::get(&permission_status, &"state".into()) {
+                                        if let Some(state_str) = state_value.as_string() {
+                                            let permission_state = PermissionState::from_string(&state_str);
+                                            self.permission_state.set(permission_state.clone());
+                                            console_log!("Camera permission state: {:?}", permission_state);
+                                            return permission_state;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: assume unknown if we can't check
+        let unknown_state = PermissionState::Unknown;
+        self.permission_state.set(unknown_state.clone());
+        console_log!("Could not check camera permissions, assuming unknown");
+        unknown_state
+    }
+
     pub async fn initialize_camera(&self) -> Result<(), String> {
         if !self.camera_settings.get().enabled {
             return Err("Camera is disabled".to_string());
         }
 
         self.camera_state.set(CameraState::Initializing);
+
+        // Check permissions first
+        let permission_state = self.check_camera_permissions().await;
+
+        match permission_state {
+            PermissionState::Denied => {
+                self.camera_state.set(CameraState::Error("Camera permission denied. Please enable camera access in your browser settings and refresh the page.".to_string()));
+                return Err("Camera permission denied. Please check browser settings.".to_string());
+            },
+            PermissionState::Granted => {
+                console_log!("Camera permission already granted, proceeding...");
+            },
+            PermissionState::Prompt | PermissionState::Unknown => {
+                console_log!("Camera permission will be requested...");
+            },
+        }
 
         let window = web_sys::window().ok_or("No window found")?;
         let navigator: Navigator = window.navigator();
@@ -123,7 +184,24 @@ impl CameraController {
 
         let stream = wasm_bindgen_futures::JsFuture::from(stream_promise)
             .await
-            .map_err(|e| format!("Failed to get media stream: {:?}", e))?;
+            .map_err(|e| {
+                // Provide more specific error messages
+                let error_str = format!("{:?}", e);
+                if error_str.contains("NotAllowedError") || error_str.contains("Permission") {
+                    self.permission_state.set(PermissionState::Denied);
+                    self.camera_state.set(CameraState::Error("Camera access denied. Please enable camera permissions in your browser and try again.".to_string()));
+                    "Camera permission denied. Please enable camera access in your browser settings.".to_string()
+                } else if error_str.contains("NotFoundError") {
+                    self.camera_state.set(CameraState::Error("No camera found. Please connect a camera and try again.".to_string()));
+                    "No camera device found. Please connect a camera.".to_string()
+                } else if error_str.contains("NotReadableError") {
+                    self.camera_state.set(CameraState::Error("Camera is being used by another application.".to_string()));
+                    "Camera is busy or being used by another application.".to_string()
+                } else {
+                    self.camera_state.set(CameraState::Error(format!("Camera error: {}", error_str)));
+                    format!("Failed to access camera: {}", error_str)
+                }
+            })?;
 
         let media_stream: MediaStream = stream.into();
 
@@ -131,10 +209,49 @@ impl CameraController {
             *ms.borrow_mut() = Some(media_stream);
         });
 
+        // Update permission state to granted if we got here
+        self.permission_state.set(PermissionState::Granted);
         self.camera_state.set(CameraState::Stopped);
 
         console_log!("Camera initialized successfully");
         Ok(())
+    }
+
+    // Provide permission help
+    pub fn get_permission_help_text(&self) -> String {
+        let user_agent = web_sys::window()
+            .and_then(|w| w.navigator().user_agent().ok())
+            .unwrap_or_default();
+
+        if user_agent.contains("Chrome") {
+            "Chrome: Click the camera icon in the address bar, or go to Settings > Privacy and security > Site Settings > Camera".to_string()
+        } else if user_agent.contains("Firefox") {
+            "Firefox: Click the shield icon in the address bar, or go to Preferences > Privacy & Security > Permissions > Camera".to_string()
+        } else if user_agent.contains("Safari") {
+            "Safari: Go to Safari > Settings > Websites > Camera, or check the address bar for permission prompts".to_string()
+        } else if user_agent.contains("Edge") {
+            "Edge: Click the camera icon in the address bar, or go to Settings > Site permissions > Camera".to_string()
+        } else {
+            "Please check your browser's privacy/security settings to enable camera access for this site".to_string()
+        }
+    }
+
+    // Add method to reset camera state and retry
+    pub async fn retry_camera_access(&self) -> Result<(), String> {
+        console_log!("Retrying camera access...");
+
+        // Reset state
+        self.camera_state.set(CameraState::Inactive);
+        self.permission_state.set(PermissionState::Unknown);
+
+        // Stop any existing streams
+        self.stop_camera();
+
+        // Wait a bit and try again
+        gloo_timers::future::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Re-check permissions and initialize
+        self.initialize_camera().await
     }
 
     pub fn start_recording(&self, session_type: SessionType) -> Result<(), String> {

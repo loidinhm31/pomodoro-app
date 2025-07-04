@@ -167,6 +167,26 @@ pub enum CameraState {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PermissionState {
+    Granted,
+    Denied,
+    Prompt,
+    Unknown,
+}
+
+impl PermissionState {
+    pub fn from_string(s: &str) -> Self {
+        match s {
+            "granted" => PermissionState::Granted,
+            "denied" => PermissionState::Denied,
+            "prompt" => PermissionState::Prompt,
+            _ => PermissionState::Unknown,
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CameraSettings {
     pub enabled: bool,
